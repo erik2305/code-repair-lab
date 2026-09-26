@@ -1,0 +1,31 @@
+id: dev-001
+
+source:
+  type: snapshot
+  path: repo
+
+bug_description: >
+  normalize_name preserves surrounding tabs and newlines instead of removing
+  all surrounding whitespace from a name.
+
+reproduction_test:
+  - python
+  - -m
+  - pytest
+  - tests/test_text_utils.py::test_normalize_name_strips_non_space_whitespace
+
+full_test:
+  - python
+  - -m
+  - pytest
+
+lint:
+  - ruff
+  - check
+  - .
+
+writable_paths:
+  - "*.py"
+
+protected_paths:
+  - tests/**
