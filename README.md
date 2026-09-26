@@ -25,6 +25,16 @@ python -m pytest
 ruff check .
 ```
 
+## Development sandbox
+
+Docker is required to execute benchmark commands in the development sandbox. Build the image with:
+
+```bash
+docker build -f Dockerfile.sandbox -t coderepair-lab-sandbox:dev .
+```
+
+This image contains Python 3.13, pytest, and Ruff and is intended only for the synthetic development benchmarks.
+
 ## Planned
 
 Future work will introduce the single-shot baseline and iterative workflow incrementally, once their contracts are defined.

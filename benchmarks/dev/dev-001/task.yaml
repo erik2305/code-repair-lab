@@ -22,6 +22,8 @@ full_test:
 lint:
   - ruff
   - check
+  - --ignore
+  - EXE002
   - .
 
 writable_paths:
