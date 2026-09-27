@@ -1,19 +1,40 @@
-"""Workspace-bound MCP tools for reading and controlled text changes."""
+"""Workspace-bound MCP tools for controlled changes and trusted feedback."""
 
+import subprocess
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
+from coderepair.docker_runner import CommandResult, run_in_docker
 from coderepair.file_changes import FileChange
 from coderepair.file_changes import apply_file_changes as _apply_changes
 from coderepair.path_policy import validate_workspace_path
 from coderepair.workspace import Workspace
 
 _MAX_READ_BYTES = 256 * 1024
+_MAX_OUTPUT_BYTES = 32 * 1024
+_TRUNCATION_MARKER = b"\n... [output truncated] ...\n"
 
 
-def build_mcp_server(workspace: Workspace) -> MCPServer:
+@dataclass(frozen=True)
+class ExecutionToolResult:
+    """Bounded model-facing feedback from one trusted benchmark command."""
+
+    configured: bool
+    exit_code: int | None
+    timed_out: bool
+    duration_seconds: float | None
+    stdout: str
+    stderr: str
+    stdout_truncated: bool
+    stderr_truncated: bool
+
+
+def build_mcp_server(
+    workspace: Workspace, *, image: str, timeout_seconds: float
+) -> MCPServer:
     """Build an MCP server permanently bound to one workspace."""
     server = MCPServer("CodeRepair Lab workspace")
 
@@ -36,7 +57,79 @@ def build_mcp_server(workspace: Workspace) -> MCPServer:
             raise ToolError(_safe_tool_error(error, workspace.root)) from None
         return [validate_workspace_path(change.path) for change in changes]
 
+    def execute(argv: tuple[str, ...]) -> ExecutionToolResult:
+        try:
+            result = run_in_docker(
+                workspace,
+                argv,
+                image=image,
+                timeout_seconds=timeout_seconds,
+                workspace_read_only=True,
+            )
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            raise ToolError(_safe_execution_error(error)) from None
+        return _execution_feedback(result, workspace.root)
+
+    @server.tool()
+    def run_reproduction() -> ExecutionToolResult:
+        """Run the benchmark's trusted reproduction test read-only."""
+        return execute(workspace.task.reproduction_test)
+
+    @server.tool()
+    def run_full_tests() -> ExecutionToolResult:
+        """Run the benchmark's trusted full test suite read-only."""
+        return execute(workspace.task.full_test)
+
+    @server.tool()
+    def run_lint() -> ExecutionToolResult:
+        """Run the benchmark's trusted lint command, if configured."""
+        if workspace.task.lint is None:
+            return ExecutionToolResult(False, None, False, None, "", "", False, False)
+        return execute(workspace.task.lint)
+
     return server
+
+
+def _execution_feedback(result: CommandResult, root: Path) -> ExecutionToolResult:
+    stdout, stdout_truncated = _limited_output(_without_host_path(result.stdout, root))
+    stderr, stderr_truncated = _limited_output(_without_host_path(result.stderr, root))
+    return ExecutionToolResult(
+        configured=True,
+        exit_code=result.exit_code,
+        timed_out=result.timed_out,
+        duration_seconds=result.duration_seconds,
+        stdout=stdout,
+        stderr=stderr,
+        stdout_truncated=stdout_truncated,
+        stderr_truncated=stderr_truncated,
+    )
+
+
+def _limited_output(value: str) -> tuple[str, bool]:
+    encoded = value.encode("utf-8")
+    if len(encoded) <= _MAX_OUTPUT_BYTES:
+        return value, False
+    retained = _MAX_OUTPUT_BYTES - len(_TRUNCATION_MARKER)
+    head = encoded[: retained // 2].decode("utf-8", errors="ignore")
+    tail = encoded[-(retained - retained // 2) :].decode("utf-8", errors="ignore")
+    return head + _TRUNCATION_MARKER.decode() + tail, True
+
+
+def _without_host_path(value: str, root: Path) -> str:
+    host_path = str(root)
+    return value.replace(host_path, "/workspace").replace(
+        host_path.replace("\\", "/"), "/workspace"
+    )
+
+
+def _safe_execution_error(
+    error: OSError | ValueError | subprocess.SubprocessError,
+) -> str:
+    if isinstance(error, FileNotFoundError):
+        return "Docker executable is unavailable"
+    if isinstance(error, ValueError):
+        return "Docker execution configuration is invalid"
+    return "Docker execution failed before a command result was available"
 
 
 def _read_workspace_file(workspace: Workspace, path: str) -> str:

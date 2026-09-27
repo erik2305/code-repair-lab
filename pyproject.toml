@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Experiments comparing single-shot and iterative agentic code repair"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["PyYAML>=6", "mcp>=2,<3"]
+dependencies = ["PyYAML>=6", "mcp>=2,<3", "openai>=3.18,<4", "pydantic>=2,<3"]
 
 [project.optional-dependencies]
 dev = [
