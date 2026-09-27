@@ -122,7 +122,7 @@ protected_paths: [tests/**]
         encoding="utf-8",
     )
     workspace = create_workspace(manifest, tmp_path / "workspace")
-    calls: list[tuple[str, ...]] = []
+    calls: list[tuple[tuple[str, ...], bool]] = []
 
     def successful_run(
         workspace: Workspace,
@@ -130,10 +130,11 @@ protected_paths: [tests/**]
         *,
         image: str,
         timeout_seconds: float,
+        workspace_read_only: bool = False,
     ) -> CommandResult:
         del workspace, image, timeout_seconds
         command = tuple(argv)
-        calls.append(command)
+        calls.append((command, workspace_read_only))
         return CommandResult(command, 0, "", "", False, 0.01)
 
     monkeypatch.setattr(evaluator, "run_in_docker", successful_run)
@@ -147,6 +148,36 @@ protected_paths: [tests/**]
     assert result.success
     assert result.lint is None
     assert len(calls) == 2
+    assert all(read_only for _, read_only in calls)
+
+
+def test_all_evaluator_commands_use_read_only_workspace(
+    dev_workspace: Workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    read_only_flags: list[bool] = []
+
+    def successful_run(
+        workspace: Workspace,
+        argv: Sequence[str],
+        *,
+        image: str,
+        timeout_seconds: float,
+        workspace_read_only: bool = False,
+    ) -> CommandResult:
+        del workspace, image, timeout_seconds
+        read_only_flags.append(workspace_read_only)
+        return CommandResult(tuple(argv), 0, "", "", False, 0.01)
+
+    monkeypatch.setattr(evaluator, "run_in_docker", successful_run)
+    result = evaluate_workspace(
+        DEV_001_MANIFEST,
+        dev_workspace,
+        image=SANDBOX_IMAGE,
+        timeout_seconds=10,
+    )
+
+    assert result.success
+    assert read_only_flags == [True, True, True]
 
 
 @pytest.fixture(scope="module")
@@ -227,3 +258,39 @@ def test_repaired_dev_001_passes_evaluation(
     assert result.full_test.exit_code == 0
     assert result.lint is not None
     assert result.lint.exit_code == 0
+
+
+def test_candidate_cannot_modify_protected_test_during_evaluation(
+    tmp_path: Path, docker_image: str
+) -> None:
+    task_directory = tmp_path / "task"
+    task_directory.mkdir()
+    shutil.copy2(DEV_001_MANIFEST, task_directory / "task.yaml")
+    shutil.copytree(DEV_001_SNAPSHOT, task_directory / "repo")
+    workspace = create_workspace(task_directory / "task.yaml", tmp_path / "workspace")
+    protected_test = workspace.root / "tests" / "test_text_utils.py"
+    original_content = protected_test.read_bytes()
+    (workspace.root / "text_utils.py").write_text(
+        "from pathlib import Path\n"
+        "Path('tests/test_text_utils.py').write_text('def test_cheat(): pass\\n')\n"
+        "def normalize_name(value: str) -> str:\n"
+        "    return value.strip()\n",
+        encoding="utf-8",
+    )
+
+    result = evaluate_workspace(
+        task_directory / "task.yaml",
+        workspace,
+        image=docker_image,
+        timeout_seconds=30,
+    )
+
+    assert not result.success
+    assert result.protected_paths_unchanged
+    assert result.reproduction is not None
+    assert result.reproduction.exit_code != 0
+    assert result.full_test is not None
+    assert result.full_test.exit_code != 0
+    assert protected_test.read_bytes() == original_content
+    snapshot_test = task_directory / "repo" / "tests" / "test_text_utils.py"
+    assert snapshot_test.read_bytes() == original_content

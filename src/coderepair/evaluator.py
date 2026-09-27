@@ -61,12 +61,14 @@ def evaluate_workspace(
         task.reproduction_test,
         image=image,
         timeout_seconds=timeout_seconds,
+        workspace_read_only=True,
     )
     full_test = run_in_docker(
         workspace,
         task.full_test,
         image=image,
         timeout_seconds=timeout_seconds,
+        workspace_read_only=True,
     )
     lint = (
         None
@@ -76,6 +78,7 @@ def evaluate_workspace(
             task.lint,
             image=image,
             timeout_seconds=timeout_seconds,
+            workspace_read_only=True,
         )
     )
 

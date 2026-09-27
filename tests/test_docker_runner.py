@@ -102,6 +102,46 @@ def test_executes_inside_workspace(
     assert (docker_workspace.root / "marker.txt").read_text() == "created"
 
 
+def test_read_only_workspace_blocks_writes_but_allows_tmp(
+    docker_workspace: Workspace, docker_image: str
+) -> None:
+    marker = docker_workspace.root / "blocked-marker.txt"
+    result = run_in_docker(
+        docker_workspace,
+        [
+            "python",
+            "-c",
+            "from pathlib import Path; "
+            "Path('blocked-marker.txt').write_text('created')",
+        ],
+        image=docker_image,
+        timeout_seconds=10,
+        workspace_read_only=True,
+    )
+
+    assert result.exit_code != 0
+    assert not result.timed_out
+    assert not marker.exists()
+
+    tmp_result = run_in_docker(
+        docker_workspace,
+        [
+            "python",
+            "-c",
+            "from pathlib import Path; "
+            "path = Path('/tmp/marker.txt'); "
+            "path.write_text('temporary'); print(path.read_text())",
+        ],
+        image=docker_image,
+        timeout_seconds=10,
+        workspace_read_only=True,
+    )
+
+    assert tmp_result.exit_code == 0
+    assert tmp_result.stdout.strip() == "temporary"
+    assert not marker.exists()
+
+
 def test_captures_output_and_success(
     docker_workspace: Workspace, docker_image: str
 ) -> None:

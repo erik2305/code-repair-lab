@@ -6,7 +6,7 @@ The project is currently under development. At present, the repository contains 
 
 ## Development setup
 
-Python 3.11 or newer is required.
+Python 3.12 or newer is required.
 
 ```bash
 python -m venv .venv

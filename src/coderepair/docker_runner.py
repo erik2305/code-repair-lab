@@ -28,6 +28,7 @@ def run_in_docker(
     *,
     image: str,
     timeout_seconds: float,
+    workspace_read_only: bool = False,
 ) -> CommandResult:
     """Run *argv* in a Docker container bound to *workspace*."""
     command_argv = _validate_argv(argv)
@@ -63,8 +64,12 @@ def run_in_docker(
         "--read-only",
         "--tmpfs",
         "/tmp",
+        *(["--env", "RUFF_CACHE_DIR=/tmp/ruff-cache"] if workspace_read_only else []),
         "--mount",
-        f"type=bind,source={workspace.root},target=/workspace",
+        (
+            f"type=bind,source={workspace.root},target=/workspace"
+            f"{',readonly' if workspace_read_only else ''}"
+        ),
         "--workdir",
         "/workspace",
         image,
