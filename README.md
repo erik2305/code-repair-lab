@@ -1,40 +1,73 @@
 # CodeRepair Lab
 
-CodeRepair Lab is an experimental Python project for studying automated code repair. Its central research question is how a single-shot LLM repair baseline compares with an iterative, agentic code-repair workflow.
+CodeRepair Lab is an experimental Python project comparing **single-shot LLM code repair** with **iterative agentic repair**. The research question is: does iteration materially improve repair success, and when is that improvement worth the additional model calls, tokens, cost, latency, and complexity? Intended comparisons include solve rate, first-pass success, token usage, estimated/API cost, latency, model calls, iterations, and failure modes. The project is under development; both strategy primitives exist, but no comparative experiment has been run.
 
-The project is currently under development. At present, the repository contains the foundational Python package, development tooling, and a validated YAML contract for benchmark task definitions; repair workflows have not yet been implemented.
+## Current architecture
+
+```text
+TaskSpec / YAML
+      ↓
+Disposable snapshot workspace
+      ↓
+Shared InitialRepairContext
+      ↓
+Repair strategy: single-shot baseline or bounded agent loop
+      ↓
+Controlled mutation / workspace-scoped MCP tools
+      ↓
+Independent evaluator → read-only Docker checks
+```
+
+Implemented today:
+
+- Strict YAML loading into `TaskSpec`, with `SnapshotSource` and `GitSource` schemas. Snapshot tasks can be copied into disposable workspaces; Git materialization is not implemented.
+- Logical writable/protected path policy and controlled `FileChange` mutation. The filesystem boundary rejects symlinks, junctions, hard links, and case aliases that could bypass policy.
+- Docker execution with network disabled, capabilities dropped, resource limits, and read-only workspace mounts for trusted checks. The independent evaluator checks protected files and the complete final-tree delta against `writable_paths` before running reproduction, full tests, and optional lint.
+- A workspace-scoped MCP server exposing exactly `read_file`, `apply_file_changes`, `run_reproduction`, `run_full_tests`, and `run_lint`. It exposes no arbitrary model-facing shell command.
+- Deterministic `InitialRepairContext`; provider-neutral generation usage, latency, and model identity; `RunConfig` and agent-only `AgentLimits` contracts; and a single-shot baseline that makes one generator call before independent evaluation.
+- Synchronous OpenAI Responses adapters for repair proposals and typed agent actions, both tested offline, plus manual OpenAI and temporary Gemini smoke scripts. A bounded cumulative plain-Python agent loop uses the existing MCP tools, explicit model/tool/transcript limits, and one independent final evaluation. No live agent-action run has been made.
+
+Both strategy paths now expose comparable raw telemetry: evaluator success, model/tool calls, available token counts, aggregate model-request latency, end-to-end strategy duration, and provider-reported USD cost when supplied. Cost estimation, aggregate solve rates, comparative first-pass metrics, iteration counts, and automated failure analysis are not implemented.
+
+## Development benchmark and live validation
+
+`benchmarks/dev/dev-001` is a small synthetic task whose name normalizer misses surrounding non-space whitespace. It is the known development fixture for infrastructure validation, not a meaningful benchmark suite or holdout set.
+
+One manual Gemini API single-shot smoke run used `gemini-3.8-flash` with `medium` thinking. It proposed one structured change to `text_utils.py`; controlled mutation accepted it, and reproduction, full tests, and lint each exited 0 under independent evaluation. Observed usage was 291 input, 412 output, and 703 total tokens, with about 59.6 seconds of request latency. This is **end-to-end infrastructure validation from one run**, not evidence of a provider, baseline, or future agent solve rate. The OpenAI repair and agent-step adapters are implemented and offline-tested; neither has been claimed as live-tested.
+
+## Safety boundary
+
+Benchmark sources remain separate from disposable workspaces. Model-originated file changes pass through controlled host-side mutation, and trusted benchmark commands run with a read-only workspace in Docker. The evaluator independently rejects protected-file tampering and unauthorized final repository changes before executing candidate code. Docker here is a restricted development execution environment, **not** a formally hardened hostile multi-tenant sandbox or VM.
 
 ## Development setup
 
-Python 3.12 or newer is required.
+Python 3.12 or newer is required. Create and activate a virtual environment, then install the package and development tools:
 
 ```bash
 python -m venv .venv
-```
-
-Activate the virtual environment using the command appropriate for your shell, then install the development dependencies:
-
-```bash
 python -m pip install -e ".[dev]"
 ```
 
-Run the checks with:
-
-```bash
-python -m pytest
-ruff check .
-```
-
-## Development sandbox
-
-Docker is required to execute benchmark commands in the development sandbox. Build the image with:
+Build the development sandbox image before Docker-backed checks:
 
 ```bash
 docker build -f Dockerfile.sandbox -t coderepair-lab-sandbox:dev .
 ```
 
-This image contains Python 3.13, pytest, and Ruff and is intended only for the synthetic development benchmarks.
+The image contains Python 3.13, pytest, and Ruff and is intended for the synthetic development task. Run local checks with:
 
-## Planned
+```bash
+python -m pytest
+ruff check .
+git diff --check
+```
 
-Future work will introduce the single-shot baseline and iterative workflow incrementally, once their contracts are defined.
+The smoke scripts under `scripts/` are **manual** and may consume provider quota or balance. They are not run by pytest. Supply credentials through each provider's normal environment handling; never commit API keys.
+
+## Local verification
+
+As of 2026-09-28, the full pytest suite passed 407 tests with no skips using a repository-local `--basetemp`. `ruff check .` and `git diff --check` passed locally. This is a point-in-time result, not a CI guarantee.
+
+## Planned, not implemented
+
+LangGraph, human approval (HITL), holdout benchmarks, experiment runner, aggregate cost analysis, automated failure taxonomy, environment provenance, OpenRouter integration, `GitSource` materialization, and tracing remain future work. There is no CI guarantee in this repository.

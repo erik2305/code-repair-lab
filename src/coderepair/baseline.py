@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 from typing import Protocol
 
 from coderepair.evaluator import EvaluationResult, evaluate_workspace
@@ -12,6 +13,7 @@ from coderepair.repair_context import (
     build_initial_context,
     render_initial_context,
 )
+from coderepair.run_config import RunConfig
 from coderepair.tasks import load_task
 from coderepair.workspace import Workspace
 
@@ -24,12 +26,13 @@ class RepairGenerator(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class SingleShotResult:
-    """One proposal, its mutation outcome, and optional final evaluation."""
+    """One proposal; duration excludes manifest validation and workspace creation."""
 
     generation: GenerationResult
     mutation_applied: bool
     mutation_error: str | None
     evaluation: EvaluationResult | None
+    duration_seconds: float
 
     @property
     def changes(self) -> tuple[FileChange, ...]:
@@ -61,17 +64,17 @@ def run_single_shot_baseline(
     workspace: Workspace,
     *,
     generator: RepairGenerator,
-    max_file_bytes: int,
-    max_total_bytes: int,
-    image: str,
-    timeout_seconds: float,
+    config: RunConfig,
 ) -> SingleShotResult:
-    """Run one proposal on a fresh disposable workspace; caller owns its lifecycle."""
+    """Time context, generation, mutation and any evaluation after task validation."""
     if load_task(task_manifest) != workspace.task:
         raise ValueError("workspace task does not match the supplied task manifest")
 
+    started_at = perf_counter()
     context = build_initial_context(
-        workspace, max_file_bytes=max_file_bytes, max_total_bytes=max_total_bytes
+        workspace,
+        max_file_bytes=config.max_file_bytes,
+        max_total_bytes=config.max_total_bytes,
     )
     prompt = render_single_shot_prompt(context)
     generation = generator(prompt)
@@ -82,16 +85,22 @@ def run_single_shot_baseline(
         apply_file_changes(workspace, generation.changes)
     except (ValueError, OSError) as error:
         return SingleShotResult(
-            generation, False, _safe_mutation_error(error, workspace.root), None
+            generation,
+            False,
+            _safe_mutation_error(error, workspace.root),
+            None,
+            perf_counter() - started_at,
         )
 
     evaluation = evaluate_workspace(
         task_manifest,
         workspace,
-        image=image,
-        timeout_seconds=timeout_seconds,
+        image=config.docker_image,
+        timeout_seconds=config.evaluator_timeout_seconds,
     )
-    return SingleShotResult(generation, True, None, evaluation)
+    return SingleShotResult(
+        generation, True, None, evaluation, perf_counter() - started_at
+    )
 
 
 def _safe_mutation_error(error: ValueError | OSError, root: Path) -> str:

@@ -52,3 +52,23 @@ def test_generation_requires_immutable_file_changes_and_usage() -> None:
         GenerationResult(({"path": "text_utils.py"},), usage, 0.5, "fake", "fake-model")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="usage"):
         GenerationResult((change,), None, 0.5, "fake", "fake-model")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("cost", [None, 0, 0.0, 0.0015])
+def test_generation_accepts_optional_reported_cost(cost: float | None) -> None:
+    result = GenerationResult(
+        (), GenerationUsage(None, None, None), None, None, None,
+        reported_cost_usd=cost,
+    )
+    assert result.reported_cost_usd == cost
+
+
+@pytest.mark.parametrize(
+    "cost", [True, False, -0.01, float("nan"), float("inf"), "0.01"]
+)
+def test_generation_rejects_invalid_reported_cost(cost: object) -> None:
+    with pytest.raises(ValueError, match="reported_cost_usd"):
+        GenerationResult(
+            (), GenerationUsage(None, None, None), None, None, None,
+            reported_cost_usd=cost,
+        )

@@ -11,6 +11,7 @@ from coderepair.evaluator import EvaluationResult
 from coderepair.file_changes import FileChange
 from coderepair.generation import GenerationResult, GenerationUsage
 from coderepair.repair_context import build_initial_context, render_initial_context
+from coderepair.run_config import RunConfig
 from coderepair.workspace import Workspace, create_workspace, destroy_workspace
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +19,16 @@ DEV_001_DIRECTORY = PROJECT_ROOT / "benchmarks" / "dev" / "dev-001"
 DEV_001_MANIFEST = DEV_001_DIRECTORY / "task.yaml"
 DEV_001_SNAPSHOT = DEV_001_DIRECTORY / "repo"
 SANDBOX_IMAGE = "coderepair-lab-sandbox:dev"
+RUN_CONFIG = RunConfig(
+    model="fake-model",
+    reasoning_effort="medium",
+    max_output_tokens=4096,
+    request_timeout_seconds=60,
+    evaluator_timeout_seconds=30,
+    max_file_bytes=100_000,
+    max_total_bytes=200_000,
+    docker_image=SANDBOX_IMAGE,
+)
 
 CORRECT_REPAIR = (
     '"""Small text normalization helpers."""\n\n\n'
@@ -48,10 +59,7 @@ def run_baseline(
         DEV_001_MANIFEST,
         workspace,
         generator=generator,
-        max_file_bytes=100_000,
-        max_total_bytes=200_000,
-        image=SANDBOX_IMAGE,
-        timeout_seconds=30,
+        config=RUN_CONFIG,
     )
 
 
@@ -111,13 +119,58 @@ def test_missing_manifest_fails_before_generator(
             tmp_path / "missing.yaml",
             workspace,
             generator=generator,
-            max_file_bytes=100_000,
-            max_total_bytes=200_000,
-            image=SANDBOX_IMAGE,
-            timeout_seconds=30,
+            config=RUN_CONFIG,
         )
 
     assert generator_calls == 0
+
+
+def test_duration_covers_completed_single_shot_path(
+    workspace: Workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[str] = []
+    ticks = iter((10.0, 14.25))
+
+    def clock() -> float:
+        events.append("clock")
+        return next(ticks)
+
+    def generator(prompt: str) -> GenerationResult:
+        events.append("generator")
+        return generation(FileChange("text_utils.py", CORRECT_REPAIR))
+
+    def evaluate(*args: object, **kwargs: object) -> EvaluationResult:
+        events.append("evaluation")
+        return EvaluationResult(True, True, (), None, None, None)
+
+    monkeypatch.setattr(baseline, "perf_counter", clock)
+    monkeypatch.setattr(baseline, "evaluate_workspace", evaluate)
+
+    result = run_baseline(workspace, generator)
+
+    assert events == ["clock", "generator", "evaluation", "clock"]
+    assert result.duration_seconds == 4.25
+    assert result.success
+
+
+def test_rejected_mutation_still_has_strategy_duration(
+    workspace: Workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ticks = iter((20.0, 20.75))
+    monkeypatch.setattr(baseline, "perf_counter", lambda: next(ticks))
+
+    def unexpected(*args: object, **kwargs: object) -> EvaluationResult:
+        raise AssertionError("rejected mutation must not be evaluated")
+
+    monkeypatch.setattr(baseline, "evaluate_workspace", unexpected)
+    result = run_baseline(
+        workspace,
+        lambda prompt: generation(FileChange("tests/test_text_utils.py", "bad")),
+    )
+
+    assert result.evaluation is None
+    assert not result.success
+    assert result.duration_seconds == 0.75
 
 
 def test_prompt_uses_shared_context_once_and_generator_runs_once(
@@ -169,6 +222,56 @@ def test_prompt_uses_shared_context_once_and_generator_runs_once(
     assert result.generation is proposal
     assert result.mutation_error is None
     assert not result.success
+
+
+def test_baseline_forwards_shared_config_to_context_and_evaluator(
+    workspace: Workspace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = replace(
+        RUN_CONFIG,
+        max_file_bytes=17,
+        max_total_bytes=23,
+        docker_image="custom-sandbox:dev",
+        evaluator_timeout_seconds=7,
+    )
+    actual_build = baseline.build_initial_context
+    context_limits: list[tuple[int, int]] = []
+    evaluator_settings: list[tuple[str, float]] = []
+
+    def tracked_build(
+        target_workspace: Workspace, *, max_file_bytes: int, max_total_bytes: int
+    ) -> baseline.InitialRepairContext:
+        context_limits.append((max_file_bytes, max_total_bytes))
+        return actual_build(
+            target_workspace,
+            max_file_bytes=max_file_bytes,
+            max_total_bytes=max_total_bytes,
+        )
+
+    def tracked_evaluate(
+        task_manifest: Path,
+        target_workspace: Workspace,
+        *,
+        image: str,
+        timeout_seconds: float,
+    ) -> EvaluationResult:
+        assert task_manifest == DEV_001_MANIFEST
+        assert target_workspace == workspace
+        evaluator_settings.append((image, timeout_seconds))
+        return failed_evaluation()
+
+    monkeypatch.setattr(baseline, "build_initial_context", tracked_build)
+    monkeypatch.setattr(baseline, "evaluate_workspace", tracked_evaluate)
+    result = baseline.run_single_shot_baseline(
+        DEV_001_MANIFEST,
+        workspace,
+        generator=lambda prompt: generation(),
+        config=config,
+    )
+
+    assert context_limits == [(17, 23)]
+    assert evaluator_settings == [("custom-sandbox:dev", 7)]
+    assert result.evaluation is not None
 
 
 def test_protected_change_is_rejected_without_evaluation(

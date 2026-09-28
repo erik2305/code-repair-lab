@@ -1,40 +1,26 @@
-"""Provider-neutral repair generation output and basic telemetry."""
+"""Provider-neutral result of one agent action-generation request."""
 
 import math
 from dataclasses import dataclass
+from typing import Protocol
 
-from coderepair.file_changes import FileChange
-
-
-@dataclass(frozen=True, slots=True)
-class GenerationUsage:
-    """Common token counts reported by a repair generator."""
-
-    input_tokens: int | None
-    output_tokens: int | None
-    total_tokens: int | None
-
-    def __post_init__(self) -> None:
-        for name in ("input_tokens", "output_tokens", "total_tokens"):
-            value = getattr(self, name)
-            if value is not None and (
-                isinstance(value, bool) or not isinstance(value, int) or value < 0
-            ):
-                raise ValueError(f"{name} must be a non-negative integer or None")
-        if (
-            self.input_tokens is not None
-            and self.output_tokens is not None
-            and self.total_tokens is not None
-            and self.total_tokens != self.input_tokens + self.output_tokens
-        ):
-            raise ValueError("total_tokens must equal input_tokens + output_tokens")
+from coderepair.agent_protocol import (
+    AgentAction,
+    ApplyFileChangesAction,
+    FinishAction,
+    ReadFileAction,
+    RunFullTestsAction,
+    RunLintAction,
+    RunReproductionAction,
+)
+from coderepair.generation import GenerationUsage
 
 
 @dataclass(frozen=True, slots=True)
-class GenerationResult:
-    """One immutable file-change proposal with provider-neutral metadata."""
+class AgentStepResult:
+    """One proposed action and its provider-reported telemetry."""
 
-    changes: tuple[FileChange, ...]
+    action: AgentAction
     usage: GenerationUsage
     latency_seconds: float | None
     provider: str | None
@@ -42,10 +28,18 @@ class GenerationResult:
     reported_cost_usd: float | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.changes, tuple) or any(
-            not isinstance(change, FileChange) for change in self.changes
+        if not isinstance(
+            self.action,
+            (
+                ReadFileAction,
+                ApplyFileChangesAction,
+                RunReproductionAction,
+                RunFullTestsAction,
+                RunLintAction,
+                FinishAction,
+            ),
         ):
-            raise ValueError("changes must be a tuple of FileChange objects")
+            raise ValueError("action must be an AgentAction")
         if not isinstance(self.usage, GenerationUsage):
             raise ValueError("usage must be a GenerationUsage")
         latency = self.latency_seconds
@@ -77,3 +71,9 @@ class GenerationResult:
                 raise ValueError(
                     "reported_cost_usd must be a finite non-negative number or None"
                 )
+
+
+class AgentStepGenerator(Protocol):
+    """Generate one typed agent action from a strategy-owned prompt."""
+
+    def __call__(self, prompt: str) -> AgentStepResult: ...

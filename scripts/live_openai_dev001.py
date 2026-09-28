@@ -8,16 +8,19 @@ from openai import OpenAI
 from coderepair.baseline import SingleShotResult, run_single_shot_baseline
 from coderepair.openai_generator import OpenAIRepairGenerator
 from coderepair.path_policy import validate_workspace_path
+from coderepair.run_config import RunConfig
 from coderepair.workspace import create_workspace, destroy_workspace
 
-MODEL = "gpt-6-luna"
-REASONING_EFFORT = "medium"
-MAX_OUTPUT_TOKENS = 4096
-REQUEST_TIMEOUT_SECONDS = 60
-SANDBOX_IMAGE = "coderepair-lab-sandbox:dev"
-EVALUATOR_TIMEOUT_SECONDS = 30
-MAX_FILE_BYTES = 100_000
-MAX_TOTAL_BYTES = 200_000
+CONFIG = RunConfig(
+    model="gpt-6-luna",
+    reasoning_effort="medium",
+    max_output_tokens=4096,
+    request_timeout_seconds=60,
+    evaluator_timeout_seconds=30,
+    max_file_bytes=100_000,
+    max_total_bytes=200_000,
+    docker_image="coderepair-lab-sandbox:dev",
+)
 
 TASK_MANIFEST = (
     Path(__file__).resolve().parents[1] / "benchmarks" / "dev" / "dev-001" / "task.yaml"
@@ -29,9 +32,9 @@ def _print_report(result: SingleShotResult) -> None:
     evaluation = result.evaluation
     print("task: dev-001")
     print(f"provider: {generation.provider}")
-    print(f"requested model: {MODEL}")
+    print(f"requested model: {CONFIG.model}")
     print(f"returned model: {generation.model}")
-    print(f"reasoning effort: {REASONING_EFFORT}")
+    print(f"reasoning effort: {CONFIG.reasoning_effort}")
     print(f"input tokens: {generation.usage.input_tokens}")
     print(f"output tokens: {generation.usage.output_tokens}")
     print(f"total tokens: {generation.usage.total_tokens}")
@@ -70,19 +73,16 @@ def main() -> int:
         try:
             generator = OpenAIRepairGenerator(
                 OpenAI(),
-                model=MODEL,
-                reasoning_effort=REASONING_EFFORT,
-                max_output_tokens=MAX_OUTPUT_TOKENS,
-                request_timeout_seconds=REQUEST_TIMEOUT_SECONDS,
+                model=CONFIG.model,
+                reasoning_effort=CONFIG.reasoning_effort,
+                max_output_tokens=CONFIG.max_output_tokens,
+                request_timeout_seconds=CONFIG.request_timeout_seconds,
             )
             result = run_single_shot_baseline(
                 TASK_MANIFEST,
                 workspace,
                 generator=generator,
-                max_file_bytes=MAX_FILE_BYTES,
-                max_total_bytes=MAX_TOTAL_BYTES,
-                image=SANDBOX_IMAGE,
-                timeout_seconds=EVALUATOR_TIMEOUT_SECONDS,
+                config=CONFIG,
             )
         finally:
             destroy_workspace(workspace)

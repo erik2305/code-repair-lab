@@ -75,6 +75,7 @@ def test_exact_single_request_changes_usage_model_and_latency(
     assert result.latency_seconds == 0.5
     assert result.provider == "openai"
     assert result.model == "returned-model"
+    assert result.reported_cost_usd is None
 
 
 def test_missing_usage_and_model_fallback() -> None:
