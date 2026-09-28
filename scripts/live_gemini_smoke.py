@@ -1,4 +1,4 @@
-"""Manual, single-request Gemini smoke test for the dev-001 baseline."""
+"""Historical Gemini smoke; not a supported benchmark transport."""
 
 import os
 from pathlib import Path

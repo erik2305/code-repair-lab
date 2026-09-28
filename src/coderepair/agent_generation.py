@@ -26,6 +26,7 @@ class AgentStepResult:
     provider: str | None
     model: str | None
     reported_cost_usd: float | None = None
+    routed_provider: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(
@@ -52,7 +53,7 @@ class AgentStepResult:
             raise ValueError(
                 "latency_seconds must be a finite non-negative number or None"
             )
-        for name in ("provider", "model"):
+        for name in ("provider", "model", "routed_provider"):
             value = getattr(self, name)
             if value is not None and (not isinstance(value, str) or not value.strip()):
                 raise ValueError(f"{name} must be a non-empty string or None")

@@ -1,43 +1,39 @@
-"""Manual, single-request OpenAI smoke test for the dev-001 baseline."""
+"""Manual OpenRouter single-shot smoke test for dev-001 (not run by pytest)."""
 
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from openai import OpenAI
 
 from coderepair.baseline import SingleShotResult, run_single_shot_baseline
-from coderepair.openai_generator import OpenAIRepairGenerator
+from coderepair.openrouter_generator import OpenRouterRepairGenerator
 from coderepair.path_policy import validate_workspace_path
 from coderepair.run_config import RunConfig
 from coderepair.workspace import create_workspace, destroy_workspace
 
-CONFIG = RunConfig(
-    model="gpt-6-luna",
-    reasoning_effort="medium",
-    max_output_tokens=4096,
-    request_timeout_seconds=60,
-    evaluator_timeout_seconds=30,
-    max_file_bytes=100_000,
-    max_total_bytes=200_000,
-    docker_image="coderepair-lab-sandbox:dev",
-)
-
 TASK_MANIFEST = (
     Path(__file__).resolve().parents[1] / "benchmarks" / "dev" / "dev-001" / "task.yaml"
 )
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
-def _print_report(result: SingleShotResult) -> None:
+def _print_report(result: SingleShotResult, config: RunConfig) -> None:
     generation = result.generation
     evaluation = result.evaluation
     print("task: dev-001")
-    print(f"provider: {generation.provider}")
-    print(f"requested model: {CONFIG.model}")
+    print(f"gateway/provider: {generation.provider}")
+    print(f"requested model: {config.model}")
     print(f"returned model: {generation.model}")
-    print(f"reasoning effort: {CONFIG.reasoning_effort}")
+    print(f"routed provider: {generation.routed_provider}")
+    print(f"reasoning effort: {config.reasoning_effort}")
+    print("cross-model fallback: disabled")
+    print("same-model provider fallback: enabled")
+    print("require parameters: enabled")
     print(f"input tokens: {generation.usage.input_tokens}")
     print(f"output tokens: {generation.usage.output_tokens}")
     print(f"total tokens: {generation.usage.total_tokens}")
+    print(f"reported cost USD: {generation.reported_cost_usd}")
     print(f"request latency (seconds): {generation.latency_seconds}")
     print(f"proposed file changes: {len(result.changes)}")
     print("proposed relative paths:")
@@ -50,7 +46,6 @@ def _print_report(result: SingleShotResult) -> None:
     print(f"mutation applied: {result.mutation_applied}")
     if result.mutation_error is not None:
         print(f"mutation error: {result.mutation_error}")
-
     if evaluation is None:
         print("overall evaluation success: not run")
         print("reproduction exit code: not run")
@@ -67,27 +62,38 @@ def _print_report(result: SingleShotResult) -> None:
 
 
 def main() -> int:
-    with TemporaryDirectory(prefix="coderepair-dev001-") as temporary_directory:
-        destination = Path(temporary_directory) / "workspace"
-        workspace = create_workspace(TASK_MANIFEST, destination)
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENROUTER_API_KEY is required")
+    model = os.environ.get("OPENROUTER_MODEL")
+    if not model or not model.strip():
+        raise RuntimeError("OPENROUTER_MODEL is required")
+    config = RunConfig(
+        model=model,
+        reasoning_effort="medium",
+        max_output_tokens=4096,
+        request_timeout_seconds=60,
+        evaluator_timeout_seconds=30,
+        max_file_bytes=100_000,
+        max_total_bytes=200_000,
+        docker_image="coderepair-lab-sandbox:dev",
+    )
+    with TemporaryDirectory(prefix="coderepair-openrouter-dev001-") as temporary:
+        workspace = create_workspace(TASK_MANIFEST, Path(temporary) / "workspace")
         try:
-            generator = OpenAIRepairGenerator(
-                OpenAI(),
-                model=CONFIG.model,
-                reasoning_effort=CONFIG.reasoning_effort,
-                max_output_tokens=CONFIG.max_output_tokens,
-                request_timeout_seconds=CONFIG.request_timeout_seconds,
+            generator = OpenRouterRepairGenerator(
+                OpenAI(base_url=OPENROUTER_BASE_URL, api_key=api_key),
+                model=config.model,
+                reasoning_effort=config.reasoning_effort,
+                max_output_tokens=config.max_output_tokens,
+                request_timeout_seconds=config.request_timeout_seconds,
             )
             result = run_single_shot_baseline(
-                TASK_MANIFEST,
-                workspace,
-                generator=generator,
-                config=CONFIG,
+                TASK_MANIFEST, workspace, generator=generator, config=config
             )
         finally:
             destroy_workspace(workspace)
-
-    _print_report(result)
+    _print_report(result, config)
     return 0
 
 
