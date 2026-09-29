@@ -1,0 +1,34 @@
+id: dev-003
+
+source:
+  type: snapshot
+  path: repo
+
+bug_description: >
+  A registry lookup can miss an identifier that is equivalent to a registered
+  identifier under the repository's case and surrounding-whitespace rules.
+
+reproduction_test:
+  - python
+  - -m
+  - pytest
+  - tests/test_registry.py::test_lookup_accepts_combined_case_and_whitespace
+
+full_test:
+  - python
+  - -m
+  - pytest
+
+lint:
+  - ruff
+  - check
+  - --ignore
+  - EXE002
+  - .
+
+writable_paths:
+  - identifiers.py
+  - registry.py
+
+protected_paths:
+  - tests/**

@@ -25,19 +25,30 @@ Implemented today:
 - Docker execution with network disabled, capabilities dropped, resource limits, and read-only workspace mounts for trusted checks. The independent evaluator checks protected files and the complete final-tree delta against `writable_paths` before running reproduction, full tests, and optional lint.
 - A workspace-scoped MCP server exposing exactly `read_file`, `apply_file_changes`, `run_reproduction`, `run_full_tests`, and `run_lint`. It exposes no arbitrary model-facing shell command.
 - Deterministic `InitialRepairContext`; provider-neutral generation usage, latency, and model identity; `RunConfig` and agent-only `AgentLimits` contracts; and a single-shot baseline that makes one generator call before independent evaluation.
-- OpenRouter Responses adapters for repair proposals and typed agent actions, tested offline. OpenRouter is the only supported model gateway for benchmark execution. The project uses the `openai` Python SDK as an OpenAI-compatible client configured for OpenRouter; benchmark requests are not sent directly to OpenAI. A bounded cumulative plain-Python agent loop uses the existing MCP tools, explicit model/tool/transcript limits, and one independent final evaluation. No live agent-action run has been made.
+- OpenRouter Responses adapters for repair proposals and typed agent actions. OpenRouter is the only supported model gateway for benchmark execution. The project uses the `openai` Python SDK as an OpenAI-compatible client configured for OpenRouter; benchmark requests are not sent directly to OpenAI. A bounded cumulative plain-Python agent loop uses the existing MCP tools, explicit model/tool/transcript limits, and one independent final evaluation. Both strategy paths have been live-validated once on `dev-001`.
 
-The benchmark routing policy fixes one logical model and its reasoning/generation settings. Cross-model fallback is disabled; same-model provider failover is allowed with `require_parameters` enabled. Results retain the returned model, selected routed provider when metadata is available, and gateway-reported cost when available. The OpenRouter single-shot baseline has been live-validated on `dev-001`; the typed agent-step adapter is offline-tested, and the full iterative agent path has not yet been live-validated.
+The benchmark routing policy fixes one logical model and its reasoning/generation settings. Cross-model fallback is disabled; same-model provider failover is allowed with `require_parameters` enabled. Results retain the returned model, selected routed provider when metadata is available, and gateway-reported cost when available.
 
 Both strategy paths now expose comparable raw telemetry: evaluator success, model/tool calls, available token counts, aggregate model-request latency, end-to-end strategy duration, and provider-reported USD cost when supplied. Cost estimation, aggregate solve rates, comparative first-pass metrics, iteration counts, and automated failure analysis are not implemented.
 
 ## Development benchmark and live validation
 
-`benchmarks/dev/dev-001` is a small synthetic task whose name normalizer misses surrounding non-space whitespace. It is the known development fixture for infrastructure validation, not a meaningful benchmark suite or holdout set.
+The development set contains four small fixtures:
+
+| Task | Bug class | Main purpose |
+| --- | --- | --- |
+| `dev-001` | Whitespace normalization | Local text repair |
+| `dev-002` | Collection boundary | Incomplete final chunk |
+| `dev-003` | Cross-module contract | Canonical identifier lookup |
+| `dev-004` | Shared mutable state | Cross-call options contamination |
+
+These are development/evaluation fixtures for debugging the experiment, **not** a holdout benchmark or evidence of comparative performance.
 
 One OpenRouter single-shot baseline smoke run on `dev-001` used `openai/gpt-6-luna` with `medium` reasoning. The response reported the same returned model, routed provider OpenAI, 356 input / 92 output / 448 total tokens, $0.0000816 cost, and about 3.25 seconds of request latency. It proposed one `text_utils.py` change; mutation was accepted, and independent reproduction, full-suite, and lint checks all exited 0. This is **one infrastructure-validation run**, not evidence about model quality, solve rate, strategy superiority, expected latency, or average cost. Same-model provider failover was allowed by policy but was not demonstrated by this call.
 
-A historical direct-Gemini manual smoke run also validated the provider-neutral baseline path. Its script is retained only as historical infrastructure-validation context; direct Gemini is not a supported benchmark transport. The OpenRouter agent-action adapter remains offline-tested, and no live iterative-agent run has been claimed.
+One OpenRouter iterative-agent smoke run on `dev-001` also passed independent evaluation. It made three model calls and two MCP tool calls, proposing `apply_file_changes` for `text_utils.py`, then `run_reproduction`, then `finish`. It reported 3,058 input / 311 output / 3,369 total tokens, $0.00049165 cost, about 16.85 seconds of aggregate model latency, and about 24.69 seconds end-to-end. Final reproduction, full-suite, and lint checks exited 0. This is likewise **one infrastructure-validation run**, not comparative performance evidence.
+
+A historical direct-Gemini manual smoke run also validated the provider-neutral baseline path. Its script is retained only as historical infrastructure-validation context; direct Gemini is not a supported benchmark transport.
 
 ## Safety boundary
 
@@ -66,11 +77,11 @@ ruff check .
 git diff --check
 ```
 
-The scripts under `scripts/` are **manual** and may consume provider quota or balance. They are not run by pytest. `live_openrouter_dev001.py` is the completed baseline smoke path; `live_openrouter_agent_dev001.py` is the unrun iterative-agent smoke path. `live_gemini_smoke.py` is historical only. Supply credentials through environment variables; never commit API keys.
+The scripts under `scripts/` are **manual** and may consume provider quota or balance. They are not run by pytest. `live_openrouter_dev001.py` and `live_openrouter_agent_dev001.py` are the single-task smoke paths; `live_gemini_smoke.py` is historical only. Supply credentials through environment variables; never commit API keys.
 
 ## Local verification
 
-As of 2026-09-29, the full pytest suite passed 432 tests with no skips using a repository-local `--basetemp`. `ruff check .` and `git diff --check` passed locally. This is a point-in-time result, not a CI guarantee.
+As of 2026-09-29, the full pytest suite passed 441 tests with no skips using a repository-local `--basetemp`. `ruff check .` and `git diff --check` passed locally. This is a point-in-time result, not a CI guarantee.
 
 ## Planned, not implemented
 

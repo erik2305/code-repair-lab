@@ -1,0 +1,33 @@
+id: dev-004
+
+source:
+  type: snapshot
+  path: repo
+
+bug_description: >
+  An options override in one call can unexpectedly affect the defaults returned
+  by later calls with no override.
+
+reproduction_test:
+  - python
+  - -m
+  - pytest
+  - tests/test_options.py::test_override_does_not_leak_into_later_call
+
+full_test:
+  - python
+  - -m
+  - pytest
+
+lint:
+  - ruff
+  - check
+  - --ignore
+  - EXE002
+  - .
+
+writable_paths:
+  - options.py
+
+protected_paths:
+  - tests/**

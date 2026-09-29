@@ -1,0 +1,33 @@
+id: dev-002
+
+source:
+  type: snapshot
+  path: repo
+
+bug_description: >
+  When items do not divide evenly into the requested chunk size, the final
+  incomplete group is missing from the result.
+
+reproduction_test:
+  - python
+  - -m
+  - pytest
+  - tests/test_chunks.py::test_keeps_one_item_final_chunk
+
+full_test:
+  - python
+  - -m
+  - pytest
+
+lint:
+  - ruff
+  - check
+  - --ignore
+  - EXE002
+  - .
+
+writable_paths:
+  - chunks.py
+
+protected_paths:
+  - tests/**
