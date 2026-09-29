@@ -79,10 +79,20 @@ git diff --check
 
 The scripts under `scripts/` are **manual** and may consume provider quota or balance. They are not run by pytest. `live_openrouter_dev001.py` and `live_openrouter_agent_dev001.py` are the single-task smoke paths; `live_gemini_smoke.py` is historical only. Supply credentials through environment variables; never commit API keys.
 
+## Paired DEV experiment runner
+
+After building the sandbox image, commit or stash all tracked and untracked changes, set `OPENROUTER_API_KEY`, and invoke the manual runner with an explicit model and a new output filename:
+
+```bash
+python scripts/run_dev_experiment.py --model openai/gpt-6-luna --reasoning-effort medium --repetitions 1 --output dev-results.jsonl
+```
+
+The runner pairs baseline and agent attempts on `dev-001` through `dev-004`. Each attempt gets a fresh disposable workspace and the same model, reasoning level, initial-context budgets, evaluator, and Docker image. Strategy order alternates deterministically by task and repetition. It refuses a dirty Git worktree or an existing output file, records the Git commit and immutable Docker image ID, and flushes one raw JSONL record per completed attempt. Repetitions are independent; an operational failure leaves completed records in place without a retry. **Running the script consumes provider balance.** These four tasks remain development fixtures, not a holdout evaluation; no comparative result is claimed here.
+
 ## Local verification
 
-As of 2026-09-29, the full pytest suite passed 441 tests with no skips using a repository-local `--basetemp`. `ruff check .` and `git diff --check` passed locally. This is a point-in-time result, not a CI guarantee.
+Docker-backed tests run when the daemon and sandbox image are available; otherwise they skip. Local results are point-in-time checks, not a CI guarantee.
 
 ## Planned, not implemented
 
-LangGraph, human approval (HITL), holdout benchmarks, experiment runner, aggregate cost analysis, automated failure taxonomy, environment provenance, `GitSource` materialization, and tracing remain future work. There is no CI guarantee in this repository.
+LangGraph, human approval (HITL), holdout benchmarks, aggregate cost analysis, automated failure taxonomy, full environment provenance, `GitSource` materialization, and tracing remain future work. There is no CI guarantee in this repository.

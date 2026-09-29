@@ -2,12 +2,24 @@
 
 import math
 from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Any
 
 from coderepair.generation import GenerationUsage
 
-_ROUTING = {"allow_fallbacks": True, "require_parameters": True}
+_ROUTING_POLICY = MappingProxyType(
+    {
+        "cross_model_fallback": False,
+        "same_model_provider_fallback": True,
+        "require_parameters": True,
+    }
+)
 _METADATA_HEADER = {"X-OpenRouter-Metadata": "enabled"}
+
+
+def openrouter_routing_policy() -> dict[str, bool]:
+    """Return the effective benchmark policy for request and provenance use."""
+    return dict(_ROUTING_POLICY)
 
 
 def _validate_options(
@@ -61,7 +73,12 @@ def _parse_once(
         input=prompt,
         text_format=text_format,
         max_output_tokens=max_output_tokens,
-        extra_body={"provider": _ROUTING.copy()},
+        extra_body={
+            "provider": {
+                "allow_fallbacks": _ROUTING_POLICY["same_model_provider_fallback"],
+                "require_parameters": _ROUTING_POLICY["require_parameters"],
+            }
+        },
         extra_headers=_METADATA_HEADER.copy(),
     )
 
