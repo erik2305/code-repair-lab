@@ -27,7 +27,7 @@ Implemented today:
 - Deterministic `InitialRepairContext`; provider-neutral generation usage, latency, and model identity; `RunConfig` and agent-only `AgentLimits` contracts; and a single-shot baseline that makes one generator call before independent evaluation.
 - OpenRouter Responses adapters for repair proposals and typed agent actions, tested offline. OpenRouter is the only supported model gateway for benchmark execution. The project uses the `openai` Python SDK as an OpenAI-compatible client configured for OpenRouter; benchmark requests are not sent directly to OpenAI. A bounded cumulative plain-Python agent loop uses the existing MCP tools, explicit model/tool/transcript limits, and one independent final evaluation. No live agent-action run has been made.
 
-The benchmark routing policy fixes one logical model and its reasoning/generation settings. Cross-model fallback is disabled; same-model provider failover is allowed with `require_parameters` enabled. Results retain the returned model, selected routed provider when metadata is available, and gateway-reported cost when available. The OpenRouter manual smoke script exists but has not been run.
+The benchmark routing policy fixes one logical model and its reasoning/generation settings. Cross-model fallback is disabled; same-model provider failover is allowed with `require_parameters` enabled. Results retain the returned model, selected routed provider when metadata is available, and gateway-reported cost when available. The OpenRouter single-shot baseline has been live-validated on `dev-001`; the typed agent-step adapter is offline-tested, and the full iterative agent path has not yet been live-validated.
 
 Both strategy paths now expose comparable raw telemetry: evaluator success, model/tool calls, available token counts, aggregate model-request latency, end-to-end strategy duration, and provider-reported USD cost when supplied. Cost estimation, aggregate solve rates, comparative first-pass metrics, iteration counts, and automated failure analysis are not implemented.
 
@@ -35,7 +35,9 @@ Both strategy paths now expose comparable raw telemetry: evaluator success, mode
 
 `benchmarks/dev/dev-001` is a small synthetic task whose name normalizer misses surrounding non-space whitespace. It is the known development fixture for infrastructure validation, not a meaningful benchmark suite or holdout set.
 
-One historical direct-Gemini manual smoke run used `gemini-3.8-flash` with `medium` thinking. It proposed one structured change to `text_utils.py`; controlled mutation accepted it, and reproduction, full tests, and lint each exited 0 under independent evaluation. Observed usage was 291 input, 412 output, and 703 total tokens, with about 59.6 seconds of request latency. This was **end-to-end infrastructure validation from one run**, not evidence of a provider, baseline, or future agent solve rate. The historical Gemini script is retained only to document that validation; direct Gemini is not a supported benchmark transport. OpenRouter remains offline-tested, not live-validated.
+One OpenRouter single-shot baseline smoke run on `dev-001` used `openai/gpt-6-luna` with `medium` reasoning. The response reported the same returned model, routed provider OpenAI, 356 input / 92 output / 448 total tokens, $0.0000816 cost, and about 3.25 seconds of request latency. It proposed one `text_utils.py` change; mutation was accepted, and independent reproduction, full-suite, and lint checks all exited 0. This is **one infrastructure-validation run**, not evidence about model quality, solve rate, strategy superiority, expected latency, or average cost. Same-model provider failover was allowed by policy but was not demonstrated by this call.
+
+A historical direct-Gemini manual smoke run also validated the provider-neutral baseline path. Its script is retained only as historical infrastructure-validation context; direct Gemini is not a supported benchmark transport. The OpenRouter agent-action adapter remains offline-tested, and no live iterative-agent run has been claimed.
 
 ## Safety boundary
 
@@ -64,11 +66,11 @@ ruff check .
 git diff --check
 ```
 
-The scripts under `scripts/` are **manual** and may consume provider quota or balance. They are not run by pytest. `live_openrouter_dev001.py` is the supported manual benchmark smoke; `live_gemini_smoke.py` is historical only. Supply credentials through environment variables; never commit API keys.
+The scripts under `scripts/` are **manual** and may consume provider quota or balance. They are not run by pytest. `live_openrouter_dev001.py` is the completed baseline smoke path; `live_openrouter_agent_dev001.py` is the unrun iterative-agent smoke path. `live_gemini_smoke.py` is historical only. Supply credentials through environment variables; never commit API keys.
 
 ## Local verification
 
-As of 2026-09-28, the full pytest suite passed 407 tests with no skips using a repository-local `--basetemp`. `ruff check .` and `git diff --check` passed locally. This is a point-in-time result, not a CI guarantee.
+As of 2026-09-29, the full pytest suite passed 432 tests with no skips using a repository-local `--basetemp`. `ruff check .` and `git diff --check` passed locally. This is a point-in-time result, not a CI guarantee.
 
 ## Planned, not implemented
 
