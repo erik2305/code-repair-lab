@@ -1,6 +1,6 @@
 # CodeRepair Lab
 
-CodeRepair Lab is an experimental Python project comparing **single-shot LLM code repair** with **iterative agentic repair**. The research question is: does iteration materially improve repair success, and when is that improvement worth the additional model calls, tokens, cost, latency, and complexity? Intended comparisons include solve rate, first-pass success, token usage, estimated/API cost, latency, model calls, iterations, and failure modes. The project is under development; both strategy primitives exist, but no comparative experiment has been run.
+CodeRepair Lab is an experimental Python project comparing **single-shot LLM code repair** with **iterative agentic repair**. The research question is: does iteration materially improve repair success, and when is that improvement worth the additional model calls, tokens, cost, latency, and complexity? Intended comparisons include solve rate, first-pass success, token usage, estimated/API cost, latency, model calls, iterations, and failure modes. The project is under development; both strategy primitives exist, and paired development experiments are underway.
 
 ## Current architecture
 
@@ -43,6 +43,19 @@ The development set contains four small fixtures:
 | `dev-004` | Shared mutable state | Cross-call options contamination |
 
 These are development/evaluation fixtures for debugging the experiment, **not** a holdout benchmark or evidence of comparative performance.
+
+The preregistered DEV-v2 group adds six synthetic development fixtures:
+
+| Task | Fixed bug class |
+| --- | --- |
+| `dev-005` | Cache invalidation / stale state |
+| `dev-006` | Exception-boundary specificity |
+| `dev-007` | Serialization compatibility |
+| `dev-008` | Transactional multi-state invariant |
+| `dev-009` | Recursive base-context propagation |
+| `dev-010` | Parsing/escaping pipeline |
+
+[DEV_V2_DESIGN.md](benchmarks/dev/DEV_V2_DESIGN.md) records the fixed classes and acceptance criteria before any model execution on these fixtures. For each, trusted validation establishes a partial repair that passes reproduction but fails an independent full-suite regression, as well as a complete repair that passes independent evaluation. These are still development fixtures, not holdout tasks or model-performance results. The live experiment runner remains scoped to `dev-001` through `dev-004` pending fixture review.
 
 One OpenRouter single-shot baseline smoke run on `dev-001` used `openai/gpt-6-luna` with `medium` reasoning. The response reported the same returned model, routed provider OpenAI, 356 input / 92 output / 448 total tokens, $0.0000816 cost, and about 3.25 seconds of request latency. It proposed one `text_utils.py` change; mutation was accepted, and independent reproduction, full-suite, and lint checks all exited 0. This is **one infrastructure-validation run**, not evidence about model quality, solve rate, strategy superiority, expected latency, or average cost. Same-model provider failover was allowed by policy but was not demonstrated by this call.
 

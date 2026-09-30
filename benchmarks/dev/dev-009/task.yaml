@@ -1,0 +1,36 @@
+id: dev-009
+
+source:
+  type: snapshot
+  path: repo
+
+bug_description: >
+  A nested manifest can resolve a relative reference from the wrong directory.
+  Each reference should use the directory of the manifest in which it appears,
+  including references inside deeper includes.
+
+reproduction_test:
+  - python
+  - -m
+  - pytest
+  - tests/test_resolver.py::test_nested_manifest_resolves_its_own_data
+
+full_test:
+  - python
+  - -m
+  - pytest
+
+lint:
+  - ruff
+  - check
+  - --ignore
+  - EXE002
+  - .
+
+writable_paths:
+  - manifest.py
+  - paths.py
+  - resolver.py
+
+protected_paths:
+  - tests/**

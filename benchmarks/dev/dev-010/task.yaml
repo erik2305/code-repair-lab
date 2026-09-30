@@ -1,0 +1,36 @@
+id: dev-010
+
+source:
+  type: snapshot
+  path: repo
+
+bug_description: >
+  An escaped separator in a small query can be mistaken for a field boundary.
+  Ordinary and quoted separators should parse consistently before values are
+  normalized.
+
+reproduction_test:
+  - python
+  - -m
+  - pytest
+  - tests/test_query.py::test_escaped_separator_stays_inside_value
+
+full_test:
+  - python
+  - -m
+  - pytest
+
+lint:
+  - ruff
+  - check
+  - --ignore
+  - EXE002
+  - .
+
+writable_paths:
+  - tokenizer.py
+  - normalizer.py
+  - query.py
+
+protected_paths:
+  - tests/**

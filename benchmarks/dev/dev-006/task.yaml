@@ -1,0 +1,36 @@
+id: dev-006
+
+source:
+  type: snapshot
+  path: repo
+
+bug_description: >
+  Some malformed configuration values expose a parser-specific exception instead
+  of the documented public input error. Unexpected internal failures must remain
+  distinguishable from malformed input.
+
+reproduction_test:
+  - python
+  - -m
+  - pytest
+  - tests/test_loader.py::test_invalid_numeric_value_uses_public_error
+
+full_test:
+  - python
+  - -m
+  - pytest
+
+lint:
+  - ruff
+  - check
+  - --ignore
+  - EXE002
+  - .
+
+writable_paths:
+  - parser.py
+  - loader.py
+  - errors.py
+
+protected_paths:
+  - tests/**

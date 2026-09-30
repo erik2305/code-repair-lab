@@ -1,0 +1,36 @@
+id: dev-008
+
+source:
+  type: snapshot
+  path: repo
+
+bug_description: >
+  A rejected order can leave stock changed even though the order did not commit.
+  Rejection should leave both stock and recorded order activity unchanged.
+
+reproduction_test:
+  - python
+  - -m
+  - pytest
+  - tests/test_service.py::test_rejected_order_keeps_stock
+
+full_test:
+  - python
+  - -m
+  - pytest
+
+lint:
+  - ruff
+  - check
+  - --ignore
+  - EXE002
+  - .
+
+writable_paths:
+  - inventory.py
+  - ledger.py
+  - service.py
+  - validators.py
+
+protected_paths:
+  - tests/**

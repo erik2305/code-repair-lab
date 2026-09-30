@@ -1,0 +1,35 @@
+id: dev-005
+
+source:
+  type: snapshot
+  path: repo
+
+bug_description: >
+  After a record is updated, a later summary can still show its previous value.
+  Repeated reads without an update should continue to reuse the cached summary.
+
+reproduction_test:
+  - python
+  - -m
+  - pytest
+  - tests/test_service.py::test_update_refreshes_summary
+
+full_test:
+  - python
+  - -m
+  - pytest
+
+lint:
+  - ruff
+  - check
+  - --ignore
+  - EXE002
+  - .
+
+writable_paths:
+  - store.py
+  - cache.py
+  - service.py
+
+protected_paths:
+  - tests/**

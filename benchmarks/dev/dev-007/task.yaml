@@ -1,0 +1,36 @@
+id: dev-007
+
+source:
+  type: snapshot
+  path: repo
+
+bug_description: >
+  A record written in the current persisted format cannot always be read back.
+  Previously documented legacy records must remain readable as new writes use
+  the current format.
+
+reproduction_test:
+  - python
+  - -m
+  - pytest
+  - tests/test_storage.py::test_current_record_roundtrip
+
+full_test:
+  - python
+  - -m
+  - pytest
+
+lint:
+  - ruff
+  - check
+  - --ignore
+  - EXE002
+  - .
+
+writable_paths:
+  - schema.py
+  - codec.py
+  - storage.py
+
+protected_paths:
+  - tests/**

@@ -8,8 +8,8 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from dotenv import load_dotenv
 
+from dotenv import load_dotenv
 from openai import OpenAI
 
 from coderepair.agent_loop import run_agentic_repair
