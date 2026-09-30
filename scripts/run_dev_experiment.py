@@ -35,7 +35,7 @@ from coderepair.workspace import create_workspace, destroy_workspace
 load_dotenv()
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-TASK_IDS = ("dev-001", "dev-002", "dev-003", "dev-004")
+TASK_IDS = ("dev-005", "dev-006", "dev-007", "dev-008", "dev-009", "dev-010")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 MAX_OUTPUT_TOKENS = 4096
 REQUEST_TIMEOUT_SECONDS = 60
