@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from dotenv import load_dotenv
 
 from openai import OpenAI
 
@@ -30,6 +31,8 @@ from coderepair.run_telemetry import (
     telemetry_from_single_shot,
 )
 from coderepair.workspace import create_workspace, destroy_workspace
+
+load_dotenv()
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 TASK_IDS = ("dev-001", "dev-002", "dev-003", "dev-004")
