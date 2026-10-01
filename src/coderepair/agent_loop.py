@@ -20,9 +20,12 @@ from coderepair.agent_protocol import (
     ReadFileAction,
     tool_name_for_action,
 )
-from coderepair.evaluator import EvaluationResult, evaluate_workspace
+from coderepair.evaluator import (
+    EvaluationResult,
+    evaluate_workspace,
+)
 from coderepair.mcp_server import build_mcp_server
-from coderepair.repair_context import build_initial_context
+from coderepair.repair_context import build_initial_context, initial_context_sha256
 from coderepair.run_config import AgentLimits, RunConfig
 from coderepair.tasks import load_task
 from coderepair.workspace import Workspace
@@ -44,6 +47,7 @@ class AgentRunResult:
     termination_reason: AgentTerminationReason
     evaluation: EvaluationResult
     duration_seconds: float
+    initial_context_sha256: str | None = None
 
     @property
     def success(self) -> bool:
@@ -76,6 +80,7 @@ def run_agentic_repair(
         max_file_bytes=config.max_file_bytes,
         max_total_bytes=config.max_total_bytes,
     )
+    context_digest = initial_context_sha256(context)
     server = build_mcp_server(
         workspace,
         image=config.docker_image,
@@ -162,7 +167,12 @@ def run_agentic_repair(
         timeout_seconds=config.evaluator_timeout_seconds,
     )
     return AgentRunResult(
-        generations, transcript, reason, evaluation, perf_counter() - started_at
+        generations,
+        transcript,
+        reason,
+        evaluation,
+        perf_counter() - started_at,
+        context_digest,
     )
 
 

@@ -64,6 +64,12 @@ def test_shared_context_is_embedded_verbatim_once() -> None:
     assert prompt.count(shared) == 1
     assert "=== INITIAL REPAIR CONTEXT ===\n" + shared in prompt
     assert shared + "=== END INITIAL REPAIR CONTEXT ===" in prompt
+    assert prompt.index("=== INITIAL REPAIR CONTEXT ===") < prompt.index(
+        "=== REMAINING BUDGET ==="
+    )
+    assert prompt.index("=== REMAINING BUDGET ===") < prompt.index(
+        "=== TOOL HISTORY ==="
+    )
 
 
 def test_empty_history_and_zero_budgets_are_explicit_and_deterministic() -> None:
@@ -73,6 +79,19 @@ def test_empty_history_and_zero_budgets_are_explicit_and_deterministic() -> None
     assert "=== TOOL HISTORY ===\n(no tool actions yet)\n" in prompt
     assert "Model calls remaining: 0\nTool calls remaining: 0\n" in prompt
     assert render_agent_transcript(()) == "(no tool actions yet)"
+
+
+def test_static_prefix_is_stable_across_budget_and_history() -> None:
+    first = render(model_calls_remaining=3, tool_calls_remaining=4)
+    later = render(
+        (entry(ReadFileAction("text_utils.py"), "observation"),),
+        model_calls_remaining=1,
+        tool_calls_remaining=2,
+    )
+    boundary = "=== REMAINING BUDGET ==="
+    assert first.split(boundary, 1)[0] == later.split(boundary, 1)[0]
+    assert first.count(render_initial_context(context())) == 1
+    assert later.count(render_initial_context(context())) == 1
 
 
 def test_ordered_history_renders_all_tool_actions_without_file_contents() -> None:

@@ -11,6 +11,7 @@ from coderepair.generation import GenerationResult
 from coderepair.repair_context import (
     InitialRepairContext,
     build_initial_context,
+    initial_context_sha256,
     render_initial_context,
 )
 from coderepair.run_config import RunConfig
@@ -33,6 +34,7 @@ class SingleShotResult:
     mutation_error: str | None
     evaluation: EvaluationResult | None
     duration_seconds: float
+    initial_context_sha256: str | None = None
 
     @property
     def changes(self) -> tuple[FileChange, ...]:
@@ -50,8 +52,7 @@ class SingleShotResult:
 def render_single_shot_prompt(context: InitialRepairContext) -> str:
     """Add one-attempt instructions to the exact shared initial context."""
     return (
-        render_initial_context(context)
-        + "\nSINGLE-SHOT REPAIR\n"
+        render_initial_context(context) + "\nSINGLE-SHOT REPAIR\n"
         "Diagnose the bug from the supplied context and propose final file changes "
         "in one attempt. Change only writable files. Protected files may be inspected "
         "but must not be changed. There will be no iterative test feedback or "
@@ -76,6 +77,7 @@ def run_single_shot_baseline(
         max_file_bytes=config.max_file_bytes,
         max_total_bytes=config.max_total_bytes,
     )
+    context_digest = initial_context_sha256(context)
     prompt = render_single_shot_prompt(context)
     generation = generator(prompt)
     if not isinstance(generation, GenerationResult):
@@ -90,6 +92,7 @@ def run_single_shot_baseline(
             _safe_mutation_error(error, workspace.root),
             None,
             perf_counter() - started_at,
+            context_digest,
         )
 
     evaluation = evaluate_workspace(
@@ -99,7 +102,12 @@ def run_single_shot_baseline(
         timeout_seconds=config.evaluator_timeout_seconds,
     )
     return SingleShotResult(
-        generation, True, None, evaluation, perf_counter() - started_at
+        generation,
+        True,
+        None,
+        evaluation,
+        perf_counter() - started_at,
+        context_digest,
     )
 
 

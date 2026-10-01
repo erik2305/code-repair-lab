@@ -36,3 +36,4 @@ class TaskSpec:
     lint: tuple[str, ...] | None
     writable_paths: tuple[str, ...]
     protected_paths: tuple[str, ...]
+    context_withheld_paths: tuple[str, ...] = ()

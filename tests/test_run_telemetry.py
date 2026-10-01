@@ -89,6 +89,17 @@ def test_missing_agent_usage_and_latency_never_become_zero() -> None:
     )
 
 
+def test_optional_token_details_follow_complete_data_aggregation() -> None:
+    steps = (
+        agent_step(GenerationUsage(10, 4, 14, 0, 2), 0.1),
+        agent_step(GenerationUsage(20, 6, 26, 3, None), 0.2),
+    )
+    result = AgentRunResult(steps, (), "finish", evaluation(False), 1.0)
+    telemetry = telemetry_from_agent_run(result)
+    assert telemetry.cached_input_tokens == 3
+    assert telemetry.reasoning_output_tokens is None
+
+
 def test_missing_dimension_is_independent_of_other_dimensions() -> None:
     steps = (
         agent_step(GenerationUsage(None, 20, 120), 0.5),

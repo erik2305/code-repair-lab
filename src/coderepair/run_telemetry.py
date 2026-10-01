@@ -20,6 +20,8 @@ class RunTelemetry:
     model_latency_seconds: float | None
     duration_seconds: float
     reported_cost_usd: float | None = None
+    cached_input_tokens: int | None = None
+    reasoning_output_tokens: int | None = None
 
     def __post_init__(self) -> None:
         if type(self.success) is not bool:
@@ -28,7 +30,13 @@ class RunTelemetry:
             value = getattr(self, name)
             if type(value) is not int or value < 0:
                 raise ValueError(f"{name} must be a non-negative integer")
-        for name in ("input_tokens", "output_tokens", "total_tokens"):
+        for name in (
+            "input_tokens",
+            "output_tokens",
+            "total_tokens",
+            "cached_input_tokens",
+            "reasoning_output_tokens",
+        ):
             value = getattr(self, name)
             if value is not None and (type(value) is not int or value < 0):
                 raise ValueError(f"{name} must be a non-negative integer or None")
@@ -57,6 +65,8 @@ def telemetry_from_single_shot(result: SingleShotResult) -> RunTelemetry:
         model_latency_seconds=result.generation.latency_seconds,
         duration_seconds=result.duration_seconds,
         reported_cost_usd=result.generation.reported_cost_usd,
+        cached_input_tokens=usage.cached_input_tokens,
+        reasoning_output_tokens=usage.reasoning_output_tokens,
     )
 
 
@@ -81,6 +91,12 @@ def telemetry_from_agent_run(result: AgentRunResult) -> RunTelemetry:
         duration_seconds=result.duration_seconds,
         reported_cost_usd=_sum_complete(
             tuple(step.reported_cost_usd for step in result.generations)
+        ),
+        cached_input_tokens=_sum_complete(
+            tuple(step.usage.cached_input_tokens for step in result.generations)
+        ),
+        reasoning_output_tokens=_sum_complete(
+            tuple(step.usage.reasoning_output_tokens for step in result.generations)
         ),
     )
 

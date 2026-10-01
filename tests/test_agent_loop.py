@@ -3,6 +3,7 @@ import shutil
 import subprocess
 from collections.abc import Iterator
 from dataclasses import replace
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
@@ -144,6 +145,7 @@ def test_immediate_finish_and_first_call_fairness(
     assert len(generator.prompts) == 1
     first = generator.prompts[0]
     assert first.count(initial) == 1
+    assert result.initial_context_sha256 == sha256(initial.encode("utf-8")).hexdigest()
     assert "(no tool actions yet)" in first
     assert "Model calls remaining: 5" in first
     assert "Tool calls remaining: 5" in first
@@ -295,9 +297,20 @@ def test_all_five_action_mappings_use_real_mcp_boundary(
     fake_evaluator(monkeypatch)
     docker_commands: list[tuple[tuple[str, ...], bool]] = []
 
+    def forbidden_live_hash(_root: Path) -> str:
+        raise AssertionError("workspace hashing belongs to post-run shadow replay")
+
+    monkeypatch.setattr(
+        agent_loop, "workspace_state_sha256", forbidden_live_hash, raising=False
+    )
+
     def fake_docker(
-        bound_workspace: Workspace, argv: tuple[str, ...], *,
-        image: str, timeout_seconds: float, workspace_read_only: bool,
+        bound_workspace: Workspace,
+        argv: tuple[str, ...],
+        *,
+        image: str,
+        timeout_seconds: float,
+        workspace_read_only: bool,
     ) -> CommandResult:
         assert bound_workspace is workspace
         assert image == SANDBOX_IMAGE
@@ -309,24 +322,32 @@ def test_all_five_action_mappings_use_real_mcp_boundary(
     generator = SequenceGenerator(
         ReadFileAction("text_utils.py"),
         ApplyFileChangesAction((FileChange("text_utils.py", CORRECT_REPAIR),)),
-        RunReproductionAction(), RunFullTestsAction(), RunLintAction(), FinishAction(),
+        RunReproductionAction(),
+        RunFullTestsAction(),
+        RunLintAction(),
+        FinishAction(),
     )
 
     result = run(workspace, generator, limits=AgentLimits(6, 5, 200_000))
 
     assert result.termination_reason == "finish"
     assert [entry.observation.tool for entry in result.transcript] == [
-        "read_file", "apply_file_changes", "run_reproduction",
-        "run_full_tests", "run_lint",
+        "read_file",
+        "apply_file_changes",
+        "run_reproduction",
+        "run_full_tests",
+        "run_lint",
     ]
     assert json.loads(result.transcript[1].observation.content) == {
         "result": ["text_utils.py"]
     }
+    assert not hasattr(result.transcript[1], "workspace_state_sha256")
     assert (workspace.root / "text_utils.py").read_text(encoding="utf-8") == (
         CORRECT_REPAIR
     )
     assert docker_commands == [
-        (command, True) for command in (
+        (command, True)
+        for command in (
             workspace.task.reproduction_test,
             workspace.task.full_test,
             workspace.task.lint,
@@ -350,8 +371,11 @@ def test_provider_failure_propagates_without_final_evaluation(
 
     with pytest.raises(RuntimeError, match="provider failed"):
         agent_loop.run_agentic_repair(
-            MANIFEST, workspace, generator=broken_generator,
-            config=CONFIG, limits=LIMITS,
+            MANIFEST,
+            workspace,
+            generator=broken_generator,
+            config=CONFIG,
+            limits=LIMITS,
         )
     assert calls == 1
 
@@ -365,8 +389,11 @@ def test_invalid_generator_result_fails_without_evaluation(
     monkeypatch.setattr(agent_loop, "evaluate_workspace", unexpected)
     with pytest.raises(ValueError, match="AgentStepResult"):
         agent_loop.run_agentic_repair(
-            MANIFEST, workspace, generator=lambda prompt: FinishAction(),
-            config=CONFIG, limits=LIMITS,
+            MANIFEST,
+            workspace,
+            generator=lambda prompt: FinishAction(),
+            config=CONFIG,
+            limits=LIMITS,
         )
 
 
@@ -418,7 +445,10 @@ def docker_image() -> str:
         pytest.skip("Docker CLI is unavailable")
     try:
         daemon = subprocess.run(
-            ["docker", "info"], capture_output=True, check=False, text=True,
+            ["docker", "info"],
+            capture_output=True,
+            check=False,
+            text=True,
             timeout=10,
         )
     except (OSError, subprocess.SubprocessError) as error:
@@ -427,7 +457,10 @@ def docker_image() -> str:
         pytest.skip("Docker daemon is unavailable")
     image = subprocess.run(
         ["docker", "image", "inspect", SANDBOX_IMAGE],
-        capture_output=True, check=False, text=True, timeout=10,
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=10,
     )
     if image.returncode != 0:
         pytest.skip(f"sandbox image is unavailable: {SANDBOX_IMAGE}")

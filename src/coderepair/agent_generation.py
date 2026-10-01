@@ -27,6 +27,7 @@ class AgentStepResult:
     model: str | None
     reported_cost_usd: float | None = None
     routed_provider: str | None = None
+    prompt_sha256: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(
@@ -57,6 +58,12 @@ class AgentStepResult:
             value = getattr(self, name)
             if value is not None and (not isinstance(value, str) or not value.strip()):
                 raise ValueError(f"{name} must be a non-empty string or None")
+        if self.prompt_sha256 is not None and (
+            not isinstance(self.prompt_sha256, str)
+            or len(self.prompt_sha256) != 64
+            or any(char not in "0123456789abcdef" for char in self.prompt_sha256)
+        ):
+            raise ValueError("prompt_sha256 must be a lowercase SHA-256 hex digest")
         cost = self.reported_cost_usd
         if cost is not None:
             try:

@@ -6,7 +6,16 @@ from coderepair.file_changes import FileChange
 from coderepair.generation import GenerationResult, GenerationUsage
 
 
-@pytest.mark.parametrize("field", ["input_tokens", "output_tokens", "total_tokens"])
+@pytest.mark.parametrize(
+    "field",
+    [
+        "input_tokens",
+        "output_tokens",
+        "total_tokens",
+        "cached_input_tokens",
+        "reasoning_output_tokens",
+    ],
+)
 @pytest.mark.parametrize("value", [-1, True, 1.5, "3"])
 def test_rejects_invalid_token_count(field: str, value: object) -> None:
     values = {"input_tokens": None, "output_tokens": None, "total_tokens": None}
@@ -22,6 +31,20 @@ def test_total_tokens_must_equal_input_plus_output() -> None:
 
     assert GenerationUsage(100, 20, 120).total_tokens == 120
     assert GenerationUsage(None, None, None).total_tokens is None
+    assert GenerationUsage(100, 20, 120, 0, 3).cached_input_tokens == 0
+
+
+@pytest.mark.parametrize("value", ["", "A" * 64, "g" * 64, 3])
+def test_prompt_digest_must_be_lowercase_sha256(value: object) -> None:
+    with pytest.raises(ValueError, match="prompt_sha256"):
+        GenerationResult(
+            (),
+            GenerationUsage(None, None, None),
+            None,
+            None,
+            None,
+            prompt_sha256=value,
+        )
 
 
 @pytest.mark.parametrize("latency", [-0.1, True, float("inf"), float("nan"), "1"])
@@ -57,7 +80,11 @@ def test_generation_requires_immutable_file_changes_and_usage() -> None:
 @pytest.mark.parametrize("cost", [None, 0, 0.0, 0.0015])
 def test_generation_accepts_optional_reported_cost(cost: float | None) -> None:
     result = GenerationResult(
-        (), GenerationUsage(None, None, None), None, None, None,
+        (),
+        GenerationUsage(None, None, None),
+        None,
+        None,
+        None,
         reported_cost_usd=cost,
     )
     assert result.reported_cost_usd == cost
@@ -69,6 +96,10 @@ def test_generation_accepts_optional_reported_cost(cost: float | None) -> None:
 def test_generation_rejects_invalid_reported_cost(cost: object) -> None:
     with pytest.raises(ValueError, match="reported_cost_usd"):
         GenerationResult(
-            (), GenerationUsage(None, None, None), None, None, None,
+            (),
+            GenerationUsage(None, None, None),
+            None,
+            None,
+            None,
             reported_cost_usd=cost,
         )

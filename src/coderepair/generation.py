@@ -13,9 +13,17 @@ class GenerationUsage:
     input_tokens: int | None
     output_tokens: int | None
     total_tokens: int | None
+    cached_input_tokens: int | None = None
+    reasoning_output_tokens: int | None = None
 
     def __post_init__(self) -> None:
-        for name in ("input_tokens", "output_tokens", "total_tokens"):
+        for name in (
+            "input_tokens",
+            "output_tokens",
+            "total_tokens",
+            "cached_input_tokens",
+            "reasoning_output_tokens",
+        ):
             value = getattr(self, name)
             if value is not None and (
                 isinstance(value, bool) or not isinstance(value, int) or value < 0
@@ -41,6 +49,7 @@ class GenerationResult:
     model: str | None
     reported_cost_usd: float | None = None
     routed_provider: str | None = None
+    prompt_sha256: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.changes, tuple) or any(
@@ -63,6 +72,12 @@ class GenerationResult:
             value = getattr(self, name)
             if value is not None and (not isinstance(value, str) or not value.strip()):
                 raise ValueError(f"{name} must be a non-empty string or None")
+        if self.prompt_sha256 is not None and (
+            not isinstance(self.prompt_sha256, str)
+            or len(self.prompt_sha256) != 64
+            or any(char not in "0123456789abcdef" for char in self.prompt_sha256)
+        ):
+            raise ValueError("prompt_sha256 must be a lowercase SHA-256 hex digest")
         cost = self.reported_cost_usd
         if cost is not None:
             try:

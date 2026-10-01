@@ -1,7 +1,9 @@
 """Independent evaluation of candidate benchmark workspaces."""
 
+import json
 import stat
 from dataclasses import dataclass, replace
+from hashlib import sha256
 from pathlib import Path
 
 from coderepair.docker_runner import CommandResult, run_in_docker
@@ -153,6 +155,19 @@ def _tree_inventory(
 
     visit(root)
     return entries
+
+
+def workspace_state_sha256(root: Path) -> str:
+    """Hash a safe repository tree using the evaluator's non-following inventory."""
+    inventory = _tree_inventory(root, trusted_snapshot=False)
+    if any(kind == "unsafe" for kind, _ in inventory.values()):
+        raise ValueError("workspace contains an unsafe filesystem entry")
+    entries = [
+        (path, kind, sha256(content).hexdigest() if content is not None else None)
+        for path, (kind, content) in sorted(inventory.items())
+    ]
+    payload = json.dumps(entries, ensure_ascii=False, separators=(",", ":"))
+    return sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _unauthorized_changes(

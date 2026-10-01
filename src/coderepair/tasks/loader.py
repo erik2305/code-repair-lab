@@ -16,8 +16,9 @@ _TOP_LEVEL_KEYS = {
     "lint",
     "writable_paths",
     "protected_paths",
+    "context_withheld_paths",
 }
-_REQUIRED_KEYS = _TOP_LEVEL_KEYS - {"lint"}
+_REQUIRED_KEYS = _TOP_LEVEL_KEYS - {"lint", "context_withheld_paths"}
 
 
 def load_task(path: Path) -> TaskSpec:
@@ -36,16 +37,33 @@ def load_task(path: Path) -> TaskSpec:
         bug_description=_non_empty_string(
             manifest["bug_description"], "bug_description"
         ),
-        reproduction_test=_command(
-            manifest["reproduction_test"], "reproduction_test"
-        ),
+        reproduction_test=_command(manifest["reproduction_test"], "reproduction_test"),
         full_test=_command(manifest["full_test"], "full_test"),
         lint=None if "lint" not in manifest else _command(manifest["lint"], "lint"),
         writable_paths=_policy_paths(manifest["writable_paths"], "writable_paths"),
-        protected_paths=_policy_paths(
-            manifest["protected_paths"], "protected_paths"
+        protected_paths=_policy_paths(manifest["protected_paths"], "protected_paths"),
+        context_withheld_paths=_context_withheld_paths(
+            manifest.get("context_withheld_paths", [])
         ),
     )
+
+
+def _context_withheld_paths(value: Any) -> tuple[str, ...]:
+    # Imported here because path_policy's public helper uses TaskSpec at import time.
+    from coderepair.path_policy import validate_workspace_path
+
+    if not isinstance(value, list):
+        raise ValueError("context_withheld_paths must be a list of relative paths")
+    paths: set[str] = set()
+    for index, path in enumerate(value):
+        try:
+            normalized = validate_workspace_path(path)
+        except ValueError as error:
+            raise ValueError(f"context_withheld_paths[{index}]: {error}") from error
+        if normalized in paths:
+            raise ValueError(f"context_withheld_paths contains duplicate: {normalized}")
+        paths.add(normalized)
+    return tuple(sorted(paths))
 
 
 def _source(value: Any) -> TaskSource:

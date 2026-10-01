@@ -1,6 +1,7 @@
 """Deterministic, strategy-neutral context for a first repair inference."""
 
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 
 from coderepair.workspace import Workspace
@@ -25,6 +26,7 @@ class InitialRepairContext:
     repository_paths: tuple[str, ...]
     files: tuple[ContextFile, ...]
     omitted_paths: tuple[str, ...]
+    withheld_paths: tuple[str, ...] = ()
 
 
 def build_initial_context(
@@ -51,14 +53,39 @@ def build_initial_context(
     entries = sorted(
         _repository_entries(root), key=lambda path: path.relative_to(root).as_posix()
     )
+    withheld = set(workspace.task.context_withheld_paths)
+    entry_by_path = {entry.relative_to(root).as_posix(): entry for entry in entries}
+    missing_withheld = withheld - entry_by_path.keys()
+    if missing_withheld:
+        raise ValueError(
+            "context_withheld_paths must identify existing regular files: "
+            + ", ".join(sorted(missing_withheld))
+        )
+    for relative in sorted(withheld):
+        entry = entry_by_path[relative]
+        if (
+            entry.is_symlink()
+            or entry.is_junction()
+            or not entry.is_file()
+            or not entry.resolve().is_relative_to(root)
+        ):
+            raise ValueError(
+                f"context_withheld_paths must identify a regular file: {relative}"
+            )
+
     repository_paths: list[str] = []
     files: list[ContextFile] = []
     omitted_paths: list[str] = []
+    withheld_paths: list[str] = []
     used_bytes = 0
 
     for entry in entries:
         relative = entry.relative_to(root).as_posix()
         repository_paths.append(relative)
+        if relative in withheld:
+            withheld_paths.append(relative)
+            omitted_paths.append(relative)
+            continue
         if (
             entry.is_symlink()
             or entry.is_junction()
@@ -101,6 +128,7 @@ def build_initial_context(
         repository_paths=tuple(repository_paths),
         files=tuple(files),
         omitted_paths=tuple(omitted_paths),
+        withheld_paths=tuple(withheld_paths),
     )
 
 
@@ -121,6 +149,11 @@ def render_initial_context(context: InitialRepairContext) -> str:
         sections.append(f"FILE: {file.path}\n```{language}\n{content}```")
     sections.append(_render_paths("OMITTED FILE CONTENTS", context.omitted_paths))
     return "\n\n".join(sections) + "\n"
+
+
+def initial_context_sha256(context: InitialRepairContext) -> str:
+    """Hash the exact shared context rendering, before strategy-specific evidence."""
+    return sha256(render_initial_context(context).encode("utf-8")).hexdigest()
 
 
 def _repository_entries(root: Path) -> list[Path]:

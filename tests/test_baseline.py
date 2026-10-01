@@ -2,6 +2,7 @@ import shutil
 import subprocess
 from collections.abc import Iterator, Sequence
 from dataclasses import replace
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from coderepair.file_changes import FileChange
 from coderepair.generation import GenerationResult, GenerationUsage
 from coderepair.repair_context import build_initial_context, render_initial_context
 from coderepair.run_config import RunConfig
+from coderepair.tasks import load_task
 from coderepair.workspace import Workspace, create_workspace, destroy_workspace
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -125,6 +127,39 @@ def test_missing_manifest_fails_before_generator(
     assert generator_calls == 0
 
 
+def test_missing_withheld_file_fails_before_model_or_mutation(
+    workspace: Workspace, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = tmp_path / "withheld-task.yaml"
+    manifest.write_text(
+        DEV_001_MANIFEST.read_text(encoding="utf-8")
+        + "\ncontext_withheld_paths:\n  - missing.py\n",
+        encoding="utf-8",
+    )
+    constrained = replace(workspace, task=load_task(manifest))
+    source = workspace.root / "text_utils.py"
+    before = source.read_bytes()
+    generator_calls = 0
+
+    def generator(_prompt: str) -> GenerationResult:
+        nonlocal generator_calls
+        generator_calls += 1
+        return generation()
+
+    def unexpected(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("mutation and evaluation must not run")
+
+    monkeypatch.setattr(baseline, "apply_file_changes", unexpected)
+    monkeypatch.setattr(baseline, "evaluate_workspace", unexpected)
+    with pytest.raises(ValueError, match="missing.py"):
+        baseline.run_single_shot_baseline(
+            manifest, constrained, generator=generator, config=RUN_CONFIG
+        )
+
+    assert generator_calls == 0
+    assert source.read_bytes() == before
+
+
 def test_duration_covers_completed_single_shot_path(
     workspace: Workspace, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -208,6 +243,7 @@ def test_prompt_uses_shared_context_once_and_generator_runs_once(
     assert len(prompts) == 1
     assert prompts[0].count(shared) == 1
     assert prompts[0].startswith(shared)
+    assert result.initial_context_sha256 == sha256(shared.encode("utf-8")).hexdigest()
     assert "one attempt" in prompts[0]
     assert str(workspace.root) not in prompts[0]
     assert str(workspace.root.parent) not in prompts[0]

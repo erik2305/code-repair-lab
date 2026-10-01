@@ -1,6 +1,7 @@
 """Offline contract tests for both OpenRouter Responses adapters."""
 
 from dataclasses import replace
+from hashlib import sha256
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -104,11 +105,29 @@ def test_exact_request_routing_and_telemetry(
     assert result.provider == "openrouter"
     assert result.model == "returned"
     assert result.reported_cost_usd == 0.00123
+    assert result.prompt_sha256 == sha256(b"repair this").hexdigest()
+    assert result.usage.cached_input_tokens is None
+    assert result.usage.reasoning_output_tokens is None
     assert result.routed_provider == "Provider B"
     if kind == "repair":
         assert result.changes == (FileChange("../outside.py", "x"),)
     else:
         assert result.action == ReadFileAction("../outside.py")
+
+
+@pytest.mark.parametrize("kind", ["repair", "agent"])
+def test_responses_usage_details_are_mapped_without_inference(kind: str) -> None:
+    usage = SimpleNamespace(
+        input_tokens=100,
+        output_tokens=20,
+        total_tokens=120,
+        input_tokens_details=SimpleNamespace(cached_tokens=0),
+        output_tokens_details=SimpleNamespace(reasoning_tokens=7),
+    )
+    result = _generator(kind, _client(_proposal(kind), usage=usage))("prompt")
+    assert result.usage.cached_input_tokens == 0
+    assert result.usage.reasoning_output_tokens == 7
+    assert result.prompt_sha256 == sha256(b"prompt").hexdigest()
 
 
 @pytest.mark.parametrize("kind", ["repair", "agent"])

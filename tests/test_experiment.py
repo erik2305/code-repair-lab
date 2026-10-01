@@ -1,12 +1,17 @@
 """Offline checks for paired-run ordering, provenance, and raw records."""
 
 import json
+from dataclasses import asdict
+from hashlib import sha256
+from importlib.metadata import PackageNotFoundError
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
 
+import coderepair.experiment as experiment_module
+from coderepair.agent_evidence import ShadowPrefixResult
 from coderepair.agent_generation import AgentStepResult
 from coderepair.agent_loop import AgentRunResult
 from coderepair.agent_protocol import (
@@ -29,7 +34,9 @@ from coderepair.experiment import (
     counterbalanced_order,
     inspect_docker_image,
     open_new_output,
+    pin_docker_image,
     require_clean_git,
+    resolved_dependency_versions,
     serialize_action,
 )
 from coderepair.file_changes import FileChange
@@ -298,27 +305,109 @@ def test_agent_record_preserves_generation_and_tool_provenance() -> None:
     assert record["model_calls"] == 2
     assert record["tool_calls"] == 1
     assert record["reported_cost_usd"] is None
-    assert record["generations"][0] == {
-        "step": 1,
-        "action_type": "apply_file_changes",
-        "action_paths": ["text_utils.py"],
-        "gateway_provider": "openrouter",
-        "returned_model": "model-a",
-        "routed_provider": "provider-a",
-        "input_tokens": 100,
-        "output_tokens": 20,
-        "total_tokens": 120,
-        "reported_cost_usd": 0.0,
-        "latency_seconds": 0.5,
-    }
+    first = record["generations"][0]
+    assert first["action_type"] == "apply_file_changes"
+    assert first["action_paths"] == ["text_utils.py"]
+    assert first["returned_model"] == "model-a"
+    assert first["routed_provider"] == "provider-a"
+    assert first["input_tokens"] == 100
+    assert first["reported_cost_usd"] == 0.0
+    assert first["patch_sha256"] is not None
+    assert first["changes"][0]["path"] == "text_utils.py"
     assert record["generations"][1]["reported_cost_usd"] is None
-    assert record["transcript"] == [
-        {"step": 1, "tool": "apply_file_changes", "is_error": True}
-    ]
+    assert len(record["transcript"]) == 1
+    assert record["transcript"][0]["tool"] == "apply_file_changes"
+    assert record["transcript"][0]["is_error"] is True
+    assert record["transcript"][0]["observation_sha256"] is not None
     assert record["agent_limits"] == record["configured_agent_limits"]
     serialized = json.dumps(record, allow_nan=False)
     assert "SECRET SOURCE" not in serialized
     assert "SECRET TOOL CONTENT" not in serialized
+
+
+def test_raw_record_retains_failed_execution_and_patch_evidence() -> None:
+    source = "GENERATED SOURCE SECRET"
+    action = ApplyFileChangesAction((FileChange("text_utils.py", source),))
+    diagnostic = '{"exit_code":1,"timed_out":false,"stdout":"PRIVATE OUTPUT"}'
+    steps = (
+        AgentStepResult(
+            action,
+            GenerationUsage(5, 3, 8, 0, 1),
+            0.2,
+            "openrouter",
+            "model",
+            prompt_sha256="a" * 64,
+        ),
+    )
+    transcript = (
+        AgentTranscriptEntry(
+            action,
+            AgentObservation(
+                "apply_file_changes", '{"result":["text_utils.py"]}', False
+            ),
+        ),
+        AgentTranscriptEntry(
+            RunReproductionAction(),
+            AgentObservation("run_reproduction", diagnostic, False),
+        ),
+    )
+    shadow = ShadowPrefixResult(
+        1, False, True, True, 1, False, 1, False, None, None, "b" * 64
+    )
+    result = AgentRunResult(steps, transcript, "finish", _evaluation(), 1.0, "c" * 64)
+    record = agent_record(result, shadow_prefixes=(shadow,), **_metadata())
+
+    assert record["initial_context_sha256"] == "c" * 64
+    assert record["generations"][0]["prompt_sha256"] == "a" * 64
+    assert record["generations"][0]["changes"] == [
+        {"path": "text_utils.py", "content_sha256": sha256(source.encode()).hexdigest()}
+    ]
+    assert record["generations"][0]["cached_input_tokens"] == 0
+    assert record["generations"][0]["reasoning_output_tokens"] == 1
+    assert "workspace_state_sha256" not in record["transcript"][0]
+    assert record["transcript"][1]["is_error"] is False
+    assert record["transcript"][1]["exit_code"] == 1
+    assert record["transcript"][1]["timed_out"] is False
+    assert (
+        record["transcript"][1]["observation_sha256"]
+        == sha256(diagnostic.encode()).hexdigest()
+    )
+    assert record["shadow_prefixes"] == [asdict(shadow)]
+    assert record["shadow_prefixes"][0]["workspace_state_sha256"] == "b" * 64
+    assert source not in json.dumps(record)
+    assert "PRIVATE OUTPUT" not in json.dumps(record)
+
+
+def test_dependency_versions_are_resolved_or_fail_clearly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: list[str] = []
+
+    def fake_version(name: str) -> str:
+        observed.append(name)
+        return f"{name}-version"
+
+    monkeypatch.setattr(experiment_module, "version", fake_version)
+    assert resolved_dependency_versions() == (
+        ("openai", "openai-version"),
+        ("mcp", "mcp-version"),
+        ("pydantic", "pydantic-version"),
+    )
+    assert observed == ["openai", "mcp", "pydantic"]
+    assert dict(
+        ExperimentProvenance("x", "git", "image", (), "py", "os").dependency_versions
+    ) == {
+        "openai": "openai-version",
+        "mcp": "mcp-version",
+        "pydantic": "pydantic-version",
+    }
+
+    def missing(_name: str) -> str:
+        raise PackageNotFoundError("missing")
+
+    monkeypatch.setattr(experiment_module, "version", missing)
+    with pytest.raises(RuntimeError, match="required experiment dependency"):
+        resolved_dependency_versions()
 
 
 def test_output_file_is_exclusive(tmp_path: Path) -> None:
@@ -371,6 +460,43 @@ def test_docker_image_id_and_digest_are_recorded(
 
     monkeypatch.setattr("coderepair.experiment.subprocess.run", fake_run)
     assert inspect_docker_image("sandbox:dev") == ("sha256:image", ("repo@sha256:abc",))
+
+
+def test_pinned_config_uses_immutable_image_id_and_keeps_original_reference(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        experiment_module,
+        "inspect_docker_image",
+        lambda image: ("sha256:fixed", ("repo@sha256:fixed",)),
+    )
+    config = _config()
+    pinned, image_id, digests = pin_docker_image(config)
+
+    assert config.docker_image == "sandbox:dev"
+    assert pinned.docker_image == image_id == "sha256:fixed"
+    assert digests == ("repo@sha256:fixed",)
+    provenance = ExperimentProvenance(
+        "experiment",
+        "git",
+        image_id,
+        digests,
+        "3.13",
+        "test-os",
+        configured_docker_image=config.docker_image,
+    )
+    record = baseline_record(
+        SingleShotResult(
+            GenerationResult((), GenerationUsage(None, None, None), None, None, None),
+            True,
+            None,
+            _evaluation(),
+            1.0,
+        ),
+        **{**_metadata(), "config": pinned, "provenance": provenance},
+    )
+    assert record["docker_image"] == image_id
+    assert record["configured_docker_image"] == "sandbox:dev"
 
 
 def test_manual_runner_rejects_existing_output_before_client_creation(
@@ -450,8 +576,8 @@ def test_manual_runner_pairs_fresh_workspaces_offline(
     records = [
         json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()
     ]
-    assert len(records) == 16
-    assert len(set(roots)) == 16
+    assert len(records) == len(run_dev_experiment.TASK_IDS) * 4
+    assert len(set(roots)) == len(records)
     assert all(not root.exists() for root in roots)
     assert len({id(config) for config in configs}) == 1
     assert closed == [True]

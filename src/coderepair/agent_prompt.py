@@ -53,13 +53,13 @@ def render_agent_step_prompt(
     history = render_agent_transcript(transcript)
     return (
         f"{instructions}\n\n"
+        "=== INITIAL REPAIR CONTEXT ===\n"
+        f"{render_initial_context(context)}"
+        "=== END INITIAL REPAIR CONTEXT ===\n\n"
         "=== REMAINING BUDGET ===\n"
         f"Model calls remaining: {model_calls_remaining}\n"
         f"Tool calls remaining: {tool_calls_remaining}\n"
         "=== END REMAINING BUDGET ===\n\n"
-        "=== INITIAL REPAIR CONTEXT ===\n"
-        f"{render_initial_context(context)}"
-        "=== END INITIAL REPAIR CONTEXT ===\n\n"
         "=== TOOL HISTORY ===\n"
         f"{history}\n"
         "=== END TOOL HISTORY ===\n"

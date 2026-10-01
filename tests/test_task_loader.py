@@ -39,6 +39,31 @@ def test_loads_snapshot_manifest(tmp_path: Path) -> None:
     assert task.lint == ("ruff", "check", ".")
     assert task.writable_paths == ("src/**",)
     assert task.protected_paths == ("tests/**",)
+    assert task.context_withheld_paths == ()
+
+
+def test_context_withholding_is_sorted_and_normalized(tmp_path: Path) -> None:
+    manifest = SNAPSHOT_MANIFEST + (
+        "context_withheld_paths: [./z.py, tests/test_bug.py, a.py]\n"
+    )
+    task = load_task(write_manifest(tmp_path, manifest))
+    assert task.context_withheld_paths == ("a.py", "tests/test_bug.py", "z.py")
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["../outside.py", "/absolute.py", "C:/outside.py", "C:\\outside.py", ""],
+)
+def test_rejects_unsafe_context_withheld_path(tmp_path: Path, value: str) -> None:
+    manifest = SNAPSHOT_MANIFEST + f"context_withheld_paths: [{value!r}]\n"
+    with pytest.raises(ValueError, match="context_withheld_paths"):
+        load_task(write_manifest(tmp_path, manifest))
+
+
+def test_rejects_duplicate_normalized_context_withheld_path(tmp_path: Path) -> None:
+    manifest = SNAPSHOT_MANIFEST + "context_withheld_paths: [a.py, ./a.py]\n"
+    with pytest.raises(ValueError, match="duplicate"):
+        load_task(write_manifest(tmp_path, manifest))
 
 
 def test_loads_git_manifest(tmp_path: Path) -> None:

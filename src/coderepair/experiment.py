@@ -2,10 +2,17 @@
 
 import json
 import subprocess
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field, replace
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Literal, TextIO
 
+from coderepair.agent_evidence import (
+    ShadowPrefixResult,
+    classify_iterative_occurrence,
+    observation_evidence,
+    patch_metadata,
+)
 from coderepair.agent_loop import AgentRunResult
 from coderepair.agent_protocol import (
     AgentAction,
@@ -29,6 +36,14 @@ from coderepair.run_telemetry import (
 Strategy = Literal["baseline", "agent"]
 
 
+def resolved_dependency_versions() -> tuple[tuple[str, str], ...]:
+    """Resolve required installed versions without inventing missing values."""
+    try:
+        return tuple((name, version(name)) for name in ("openai", "mcp", "pydantic"))
+    except PackageNotFoundError as error:
+        raise RuntimeError("required experiment dependency is not installed") from error
+
+
 @dataclass(frozen=True, slots=True)
 class ExperimentProvenance:
     """Observed identifiers needed to interpret one manual experiment."""
@@ -39,6 +54,10 @@ class ExperimentProvenance:
     docker_repo_digests: tuple[str, ...]
     python_version: str
     platform: str
+    dependency_versions: tuple[tuple[str, str], ...] = field(
+        default_factory=resolved_dependency_versions
+    )
+    configured_docker_image: str | None = None
 
 
 def counterbalanced_order(
@@ -111,6 +130,12 @@ def inspect_docker_image(image: str) -> tuple[str, tuple[str, ...]]:
     return image_id, tuple(digests)
 
 
+def pin_docker_image(config: RunConfig) -> tuple[RunConfig, str, tuple[str, ...]]:
+    """Resolve a mutable tag once; use the returned config for all executions."""
+    image_id, digests = inspect_docker_image(config.docker_image)
+    return replace(config, docker_image=image_id), image_id, digests
+
+
 def open_new_output(path: Path) -> TextIO:
     """Create a JSONL destination exclusively; its parent must already exist."""
     if not path.parent.is_dir():
@@ -181,6 +206,10 @@ def baseline_record(
         generation_total_tokens=generation.usage.total_tokens,
         generation_reported_cost_usd=generation.reported_cost_usd,
         generation_latency_seconds=generation.latency_seconds,
+        generation_prompt_sha256=generation.prompt_sha256,
+        generation_cached_input_tokens=generation.usage.cached_input_tokens,
+        generation_reasoning_output_tokens=generation.usage.reasoning_output_tokens,
+        initial_context_sha256=result.initial_context_sha256,
     )
     return record
 
@@ -197,6 +226,7 @@ def agent_record(
     started_utc: str,
     finished_utc: str,
     lint_configured: bool,
+    shadow_prefixes: tuple[ShadowPrefixResult, ...] = (),
 ) -> dict[str, object]:
     """Serialize one completed agent attempt without prompts or tool content."""
     record = _common_record(
@@ -213,28 +243,42 @@ def agent_record(
     record.update(asdict(telemetry_from_agent_run(result)))
     record.update(_evaluation_fields(result.evaluation, lint_configured))
     record["termination_reason"] = result.termination_reason
-    record["generations"] = [
-        {
-            "step": step,
-            "action_type": action["type"],
-            "action_paths": action["paths"],
-            "gateway_provider": generation.provider,
-            "returned_model": generation.model,
-            "routed_provider": generation.routed_provider,
-            "input_tokens": generation.usage.input_tokens,
-            "output_tokens": generation.usage.output_tokens,
-            "total_tokens": generation.usage.total_tokens,
-            "reported_cost_usd": generation.reported_cost_usd,
-            "latency_seconds": generation.latency_seconds,
-        }
-        for step, generation in enumerate(result.generations, start=1)
-        for action in (serialize_action(generation.action),)
-    ]
+    record["initial_context_sha256"] = result.initial_context_sha256
+    record["iterative_occurrence"] = classify_iterative_occurrence(result)
+    record["shadow_prefixes"] = [asdict(prefix) for prefix in shadow_prefixes]
+    generations: list[dict[str, object]] = []
+    for step, generation in enumerate(result.generations, start=1):
+        action = serialize_action(generation.action)
+        patch_hash, changes = (
+            patch_metadata(generation.action.changes)
+            if isinstance(generation.action, ApplyFileChangesAction)
+            else (None, [])
+        )
+        generations.append(
+            {
+                "step": step,
+                "action_type": action["type"],
+                "action_paths": action["paths"],
+                "gateway_provider": generation.provider,
+                "returned_model": generation.model,
+                "routed_provider": generation.routed_provider,
+                "input_tokens": generation.usage.input_tokens,
+                "output_tokens": generation.usage.output_tokens,
+                "total_tokens": generation.usage.total_tokens,
+                "reported_cost_usd": generation.reported_cost_usd,
+                "latency_seconds": generation.latency_seconds,
+                "cached_input_tokens": generation.usage.cached_input_tokens,
+                "reasoning_output_tokens": generation.usage.reasoning_output_tokens,
+                "prompt_sha256": generation.prompt_sha256,
+                "patch_sha256": patch_hash,
+                "changes": changes,
+            }
+        )
+    record["generations"] = generations
     record["transcript"] = [
         {
             "step": step,
-            "tool": entry.observation.tool,
-            "is_error": entry.observation.is_error,
+            **observation_evidence(entry),
         }
         for step, entry in enumerate(result.transcript, start=1)
     ]
@@ -253,7 +297,7 @@ def _common_record(
     finished_utc: str,
 ) -> dict[str, object]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "experiment_id": provenance.experiment_id,
         "task_id": task_id,
         "repetition": repetition,
@@ -263,9 +307,13 @@ def _common_record(
         "timestamp_finished_utc": finished_utc,
         "git_commit": provenance.git_commit,
         "docker_image_id": provenance.docker_image_id,
+        "configured_docker_image": (
+            provenance.configured_docker_image or config.docker_image
+        ),
         "docker_repo_digests": list(provenance.docker_repo_digests),
         "python_version": provenance.python_version,
         "platform": provenance.platform,
+        "dependency_versions": dict(provenance.dependency_versions),
         "routing_policy": openrouter_routing_policy(),
         "configured_agent_limits": asdict(limits),
         "agent_limits": asdict(limits) if strategy == "agent" else None,

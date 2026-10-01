@@ -104,6 +104,8 @@ def _usage(response: Any) -> GenerationUsage:
         _field(usage, "input_tokens"),
         _field(usage, "output_tokens"),
         _field(usage, "total_tokens"),
+        _field(_field(usage, "input_tokens_details"), "cached_tokens"),
+        _field(_field(usage, "output_tokens_details"), "reasoning_tokens"),
     )
 
 

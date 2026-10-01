@@ -1,5 +1,6 @@
 """OpenRouter Responses adapter for one structured repair proposal."""
 
+from hashlib import sha256
 from time import perf_counter
 
 from openai import OpenAI
@@ -63,4 +64,5 @@ class OpenRouterRepairGenerator:
             model=_field(response, "model") or self._model,
             reported_cost_usd=_reported_cost(response),
             routed_provider=_routed_provider(response),
+            prompt_sha256=sha256(prompt.encode("utf-8")).hexdigest(),
         )
