@@ -1,0 +1,38 @@
+id: dev-015
+
+source:
+  type: snapshot
+  path: repo
+
+bug_description: >
+  An authorization request using a supported group alias fails before the
+  corresponding policy can be evaluated. It should resolve the alias and
+  return the policy decision.
+
+reproduction_test:
+  - python
+  - -m
+  - pytest
+  - tests/test_authorizer.py::test_alias_group_can_be_authorized
+
+full_test:
+  - python
+  - -m
+  - pytest
+
+lint:
+  - ruff
+  - check
+  - --ignore
+  - EXE002
+  - .
+
+writable_paths:
+  - authorizer.py
+  - policy.py
+
+protected_paths:
+  - tests/**
+
+context_withheld_paths:
+  - tests/test_policy_integration.py

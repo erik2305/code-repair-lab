@@ -1,0 +1,38 @@
+id: dev-016
+
+source:
+  type: snapshot
+  path: repo
+
+bug_description: >
+  Resolving a dependency at an allowed minimum version reports that no
+  compatible release exists. An inclusive minimum should admit that release.
+
+reproduction_test:
+  - python
+  - -m
+  - pytest
+  - tests/test_resolver.py::test_inclusive_minimum_accepts_boundary_release
+
+full_test:
+  - python
+  - -m
+  - pytest
+
+lint:
+  - ruff
+  - check
+  - --ignore
+  - EXE002
+  - .
+
+writable_paths:
+  - constraints.py
+  - resolver.py
+
+protected_paths:
+  - tests/**
+
+context_withheld_paths:
+  - fixtures/index.json
+  - tests/test_resolver_integration.py

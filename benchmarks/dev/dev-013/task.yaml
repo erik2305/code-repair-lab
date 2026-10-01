@@ -1,0 +1,36 @@
+id: dev-013
+
+source:
+  type: snapshot
+  path: repo
+
+bug_description: >
+  Loading a valid packet fixture fails even though the loader handles other
+  packets. The loader should return the packet's decoded value.
+
+reproduction_test:
+  - python
+  - -m
+  - pytest
+  - tests/test_loader.py::test_fixture_packet_loads
+
+full_test:
+  - python
+  - -m
+  - pytest
+
+lint:
+  - ruff
+  - check
+  - --ignore
+  - EXE002
+  - .
+
+writable_paths:
+  - loader.py
+
+protected_paths:
+  - tests/**
+
+context_withheld_paths:
+  - fixtures/sample.packet

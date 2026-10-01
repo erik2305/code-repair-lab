@@ -1,0 +1,37 @@
+id: dev-012
+
+source:
+  type: snapshot
+  path: repo
+
+bug_description: >
+  A page requested at the end of a collection omits an item. A page should
+  return up to the requested count, including the final available item.
+
+reproduction_test:
+  - python
+  - -m
+  - pytest
+  - tests/test_window.py::test_final_window_includes_last_item
+
+full_test:
+  - python
+  - -m
+  - pytest
+
+lint:
+  - ruff
+  - check
+  - --ignore
+  - EXE002
+  - .
+
+writable_paths:
+  - window.py
+
+protected_paths:
+  - tests/**
+
+context_withheld_paths:
+  - cursor_codec.py
+  - page_limits.py

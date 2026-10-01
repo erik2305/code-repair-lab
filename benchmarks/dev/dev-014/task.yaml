@@ -1,0 +1,36 @@
+id: dev-014
+
+source:
+  type: snapshot
+  path: repo
+
+bug_description: >
+  Loading a valid packet with a zero-valued field fails. Zero is a meaningful
+  field value and should be retained in the decoded record.
+
+reproduction_test:
+  - python
+  - -m
+  - pytest
+  - tests/test_loader.py::test_zero_field_in_fixture_is_retained
+
+full_test:
+  - python
+  - -m
+  - pytest
+
+lint:
+  - ruff
+  - check
+  - --ignore
+  - EXE002
+  - .
+
+writable_paths:
+  - normalize.py
+
+protected_paths:
+  - tests/**
+
+context_withheld_paths:
+  - fixtures/sample.packet

@@ -1,0 +1,38 @@
+id: dev-011
+
+source:
+  type: snapshot
+  path: repo
+
+bug_description: >
+  Poll scheduling produces the wrong deadline for a valid service delay hint.
+  The next poll should occur at the deadline specified by that hint.
+
+reproduction_test:
+  - python
+  - -m
+  - pytest
+  - tests/test_scheduler.py::test_hint_schedules_expected_poll
+
+full_test:
+  - python
+  - -m
+  - pytest
+
+lint:
+  - ruff
+  - check
+  - --ignore
+  - EXE002
+  - .
+
+writable_paths:
+  - scheduler.py
+
+protected_paths:
+  - tests/**
+
+context_withheld_paths:
+  - poll_hint.py
+  - display_time.py
+  - fixtures/poll_case.json
