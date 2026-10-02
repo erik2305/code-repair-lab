@@ -12,8 +12,8 @@ In these synthetic controlled tasks:
 
 - When the first patch was sufficient, Agent interaction added overhead without improving success.
 - Withholding essential information made the initial single-shot fail; providing or acquiring that evidence improved success.
-- Progressive bugs exposed a second invariant only after the first repair. Post-attempt execution feedback enabled successful second repairs.
-- Adaptive Agent behavior was not shown to be necessary for those progressive tasks: the fixed two-shot S2 protocol also solved them.
+- On dev-015/016, post-first-patch full-test feedback supplied F2 information withheld initially. S2 and Agent then succeeded 5/5; this mixes feedback timing with information availability, as anticipated in the preregistration, rather than isolating feedback alone.
+- On those progressive tasks, Agent did not improve final success over S2 with preregistered designer-selected task-specific probes. This does not establish that autonomous evidence selection is unnecessary generally.
 - Agent interaction used substantially more tokens, model calls, and provider-reported cost. These observations do not establish universal agent superiority or inferiority.
 
 ## Experimental design
@@ -24,7 +24,7 @@ Strategies start with the same deterministic `InitialRepairContext`, including t
 | --- | --- |
 | S0 | Initial single-shot: one generation, no additional inspection or feedback. |
 | S1 | Evidence-enriched single-shot: one generation after a fixed evidence acquisition. Applicable to dev-011–014 only. |
-| S2 | Fixed scripted two-shot feedback: first repair, fixed probe, second repair; no adaptive tool selection. |
+| S2 | Fixed scripted two-shot feedback: first repair, preregistered designer-selected task-specific probe, second repair; no adaptive tool selection. |
 | Agent | Bounded adaptive loop with workspace-scoped MCP tools. |
 
 DEV-v3 uses six tasks and five repetitions per applicable task/arm: 110 attempts. Common controls include logical model `openai/gpt-6-luna`, reasoning effort `medium`, 4,096 output tokens per call, 60-second request timeout, 30-second evaluator-command timeout, and 100,000/200,000-byte initial-context limits. Agent limits are eight model calls, seven tool calls, and 200,000 transcript bytes. Inter-attempt pacing is 20 seconds, outside measured strategy duration.
@@ -45,6 +45,8 @@ Primary success comes from the independent evaluator: authorized final repositor
 | dev-016 | 0/5 | — | 5/5 | 5/5 |
 
 S2 passed dev-013's functional reproduction/full tests **5/5**, but four runs failed lint and remain primary evaluator failures. Agent occurrences were 20 tool-assisted one-patch repairs and 10 feedback-responsive iterations; there were no context-refinement iterations or unclassified occurrences.
+
+dev-013's frozen role is runtime-diagnostic positive, but all five Agent runs first read the withheld fixture; four patched before any execution feedback, and all first patches passed shadow evaluation. Agent success is not clean evidence of requiring runtime diagnostics. The exact causes of the four S2 lint failures are not recoverable from source-free canonical records. Occurrence classification uses distinct recorded patch-batch hashes, not semantic materiality; aggregate overhead is agentic interaction overhead, not pure iteration cost.
 
 ## Cost / overhead
 

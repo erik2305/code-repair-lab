@@ -430,6 +430,7 @@ Recovery describes an observed transition, not causal necessity.
 | overall | 0 | 20 | 0 | 10 | 41 | 20 | 10 |
 
 Tool use before one correct patch is not repair after a failed patch.
+Occurrence labels retain the historical classifier: different patch batches mean distinct hashes of sorted paths/content digests, not a semantic materiality judgment. Aggregate Agent resource ratios measure agentic interaction overhead, not pure iteration cost.
 
 | Task | Exact action sequence | Count |
 | --- | --- | --- |
@@ -490,6 +491,7 @@ On dev-011, S0 succeeded 0/5 (0.0%); S1 succeeded 5/5 (100.0%); S2 succeeded 5/5
 On dev-012, S0 succeeded 5/5 (100.0%); S1 succeeded 5/5 (100.0%); S2 succeeded 5/5 (100.0%); Agent succeeded 5/5 (100.0%).
 On dev-013, S0 succeeded 0/5 (0.0%); S1 succeeded 5/5 (100.0%); S2 succeeded 1/5 (20.0%); Agent succeeded 5/5 (100.0%).
 S2 functional passes: 5/5; 4 final states failed lint. These remain evaluator failures.
+The exact lint causes are not recoverable from the source-free canonical records, which retain outcomes but not lint messages or generated source.
 On dev-014, S0 succeeded 5/5 (100.0%); S1 succeeded 5/5 (100.0%); S2 succeeded 5/5 (100.0%); Agent succeeded 5/5 (100.0%).
 On dev-015, S0 succeeded 0/5 (0.0%); S2 succeeded 5/5 (100.0%); Agent succeeded 5/5 (100.0%).
 On dev-016, S0 succeeded 0/5 (0.0%); S2 succeeded 5/5 (100.0%); Agent succeeded 5/5 (100.0%).
@@ -513,6 +515,7 @@ Resource ratios Agent / S0: tokens 8.90845247052922, cost 4.395091109884042, mod
 #### dev-013 versus dev-014
 
 dev-013 (runtime-diagnostic, positive): S0 0/5 (0.0%); S1 5/5 (100.0%); S2 1/5 (20.0%); Agent 5/5 (100.0%); S2 first shadow passed 0/5; Agent first shadow passed 5/5.
+The frozen role is runtime-diagnostic positive, but 4/5 Agent traces read context before the first mutation without preceding execution feedback. Intended task role is not the exhibited Agent mechanism; success does not establish that runtime diagnostics were required.
 Fixed evidence coincided with more primary successes; this is consistent with useful information, not proof of causality.
 Resource ratios S1 / S0: tokens 1.9115927072583419, cost 1.9134169884169885, model calls 1, duration 1.2142358056049225.
 Resource ratios S2 / S0: tokens 3.0743034055727554, cost 3.0533783783783783, model calls 2, duration 2.3385337040701404.
@@ -529,14 +532,14 @@ Resource ratios Agent / S0: tokens 8.862943071965628, cost 4.96786573780874, mod
 dev-015: S0 0/5 (0.0%); S2 5/5 (100.0%); Agent 5/5 (100.0%). S2 first shadows passed 0/5; post-feedback functional recoveries: 5.
 Stored Agent occurrences: {"context_refinement_iteration": 0, "feedback_responsive_iteration": 5, "none": 0, "tool_assisted_one_patch": 0}.
 Agent/S2 ratios: tokens 5.8640066847712555, cost 3.755095597855907, model calls 3.9.
-Functional improvement followed post-attempt feedback; this observed transition does not establish necessity.
-S2 and Agent both passed all repetitions; these data do not establish that adaptive autonomous tool selection was necessary.
+Functional improvement followed post-attempt feedback; the full-test probe exposed F2 information withheld from the initial context. These tasks mix feedback timing with information availability, as anticipated in the preregistration; they do not isolate feedback alone or establish necessity.
+S2 and Agent both passed all repetitions. S2 received a preregistered designer-selected task-specific probe, whereas Agent chose tools adaptively. Equal final success here does not establish that autonomous evidence selection is unnecessary in general.
 
 dev-016: S0 0/5 (0.0%); S2 5/5 (100.0%); Agent 5/5 (100.0%). S2 first shadows passed 0/5; post-feedback functional recoveries: 5.
 Stored Agent occurrences: {"context_refinement_iteration": 0, "feedback_responsive_iteration": 5, "none": 0, "tool_assisted_one_patch": 0}.
 Agent/S2 ratios: tokens 5.693067716282433, cost 3.7525491223473932, model calls 3.7.
-Functional improvement followed post-attempt feedback; this observed transition does not establish necessity.
-S2 and Agent both passed all repetitions; these data do not establish that adaptive autonomous tool selection was necessary.
+Functional improvement followed post-attempt feedback; the full-test probe exposed F2 information withheld from the initial context. These tasks mix feedback timing with information availability, as anticipated in the preregistration; they do not isolate feedback alone or establish necessity.
+S2 and Agent both passed all repetitions. S2 received a preregistered designer-selected task-specific probe, whereas Agent chose tools adaptively. Equal final success here does not establish that autonomous evidence selection is unnecessary in general.
 
 Agent used 4.51× as many tokens per attempt as S2 across matched DEV-v3 tasks.
 

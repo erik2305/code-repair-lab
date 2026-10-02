@@ -411,6 +411,12 @@ def _validate_v3(records):
             ):
                 raise ValueError("invalid shadow prefix measurement")
         _validate_arm_lifecycle(record, protocol)
+        if (
+            evaluation is not None
+            and shadows
+            and shadows[-1]["evaluation_success"] != evaluation
+        ):
+            raise ValueError("final shadow outcome disagrees with live evaluation")
     if set(indexed) != expected:
         raise ValueError(f"missing attempts: expected 110, found {len(indexed)}")
     for field in dict.fromkeys((*IDENTITY_FIELDS, *ENVIRONMENT_FIELDS)):
@@ -1108,6 +1114,10 @@ def render_report(summary: dict) -> str:
         lines.extend(
             [
                 "Tool use before one correct patch is not repair after a failed patch.",
+                "Occurrence labels retain the historical classifier: different patch "
+                "batches mean distinct hashes of sorted paths/content digests, "
+                "not a semantic materiality judgment. Aggregate Agent resource "
+                "ratios measure agentic interaction overhead, not pure iteration cost.",
                 "",
             ]
         )
@@ -1186,6 +1196,12 @@ def render_report(summary: dict) -> str:
                     f"{s2['lint_only_failures']} final states failed lint. "
                     "These remain evaluator failures."
                 )
+                if task == "dev-013":
+                    lines.append(
+                        "The exact lint causes are not recoverable from the "
+                        "source-free canonical records, which retain outcomes "
+                        "but not lint messages or generated source."
+                    )
         lines.extend(["", "### Positive/negative controls", ""])
         for positive, negative in (("dev-011", "dev-012"), ("dev-013", "dev-014")):
             lines.append(f"#### {positive} versus {negative}")
@@ -1205,6 +1221,37 @@ def render_report(summary: dict) -> str:
                     f"Agent first shadow passed "
                     f"{agent['first_patch_shadow_success']}/5."
                 )
+                if task == "dev-013":
+                    sequences = [
+                        row["tool_sequence"]
+                        for row in summary["attempts"]
+                        if row["experiment"] == version
+                        and row["task_id"] == task
+                        and row["arm"] == ARMS[3]
+                    ]
+                    before_patch = [
+                        sequence[: sequence.index("apply_file_changes")]
+                        for sequence in sequences
+                        if "apply_file_changes" in sequence
+                    ]
+                    reads_without_execution = sum(
+                        "read_file" in prefix
+                        and not any(
+                            tool in prefix
+                            for tool in (
+                                "run_reproduction", "run_full_tests", "run_lint"
+                            )
+                        )
+                        for prefix in before_patch
+                    )
+                    lines.append(
+                        "The frozen role is runtime-diagnostic positive, but "
+                        f"{reads_without_execution}/{len(sequences)} Agent traces "
+                        "read context before the first mutation without preceding "
+                        "execution feedback. Intended task role is not the exhibited "
+                        "Agent mechanism; success does not establish that runtime "
+                        "diagnostics were required."
+                    )
                 if groups[ARMS[1]]["successes"] > groups[ARMS[0]]["successes"]:
                     lines.append(
                         "Fixed evidence coincided with more primary successes; "
@@ -1256,12 +1303,18 @@ def render_report(summary: dict) -> str:
             if s2["post_feedback_functional_recovery"]:
                 lines.append(
                     "Functional improvement followed post-attempt feedback; "
-                    "this observed transition does not establish necessity."
+                    "the full-test probe exposed F2 information withheld from "
+                    "the initial context. These tasks mix feedback timing with "
+                    "information availability, as anticipated in the preregistration; "
+                    "they do not isolate feedback alone or establish necessity."
                 )
             if groups[ARMS[2]]["successes"] == groups[ARMS[3]]["successes"] == 5:
                 lines.append(
-                    "S2 and Agent both passed all repetitions; these data do not "
-                    "establish that adaptive autonomous tool selection was necessary."
+                    "S2 and Agent both passed all repetitions. S2 received a "
+                    "preregistered designer-selected task-specific probe, whereas "
+                    "Agent chose tools adaptively. Equal final success here does "
+                    "not establish that autonomous evidence selection is "
+                    "unnecessary in general."
                 )
             lines.append("")
         ratio = experiment["comparisons"]["Agent / S2"]["matched_aggregate"]["ratios"][

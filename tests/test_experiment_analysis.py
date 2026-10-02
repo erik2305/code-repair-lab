@@ -263,6 +263,7 @@ def test_lint_only_secondary_and_s2_mechanisms(tmp_path):
     rows = records()
     first = select(rows)
     first.update(success=False, evaluation_success=False, lint=command(1))
+    first["shadow_prefixes"][-1]["evaluation_success"] = False
     first["generations"][1]["changes"] = [{"path": "module.py"}]
     summary = analyze_experiments(dev_v3=save(tmp_path, rows))
     group = summary["experiments"]["dev-v3"]["s2_mechanisms"]["dev-011"]
@@ -657,16 +658,34 @@ def test_shadow_prefixes_corruption(tmp_path, arm, case):
         analyze_experiments(dev_v3=save(tmp_path, rows))
 
 
-def test_rejected_second_stage_keeps_first_accepted_shadow(tmp_path):
+@pytest.mark.parametrize("shadow_success", [False, True])
+def test_rejected_second_stage_keeps_first_accepted_shadow(tmp_path, shadow_success):
     rows = records()
     row = select(rows)
     row.update(success=False, evaluation_success=None, second_patch_applied=False)
     row["mutation_stages"][1].update(mutation_applied=False, mutation_error="rejected")
     row["shadow_prefixes"].pop()
+    row["shadow_prefixes"][0] = shadow(shadow_success)
     for field in ("reproduction", "full_test", "lint"):
         row[field].update(present=False, exit_code=None, timed_out=None)
     summary = analyze_experiments(dev_v3=save(tmp_path, rows))
     assert summary["validation"]["valid"]
     row["shadow_prefixes"] = []
     with pytest.raises(ValueError, match="accepted mutation batches"):
+        analyze_experiments(dev_v3=save(tmp_path, rows))
+
+
+@pytest.mark.parametrize("arm", ARMS[2:])
+@pytest.mark.parametrize("live_success", [False, True])
+def test_final_shadow_must_match_live_evaluation(tmp_path, arm, live_success):
+    rows = records()
+    row = select(rows, arm=arm)
+    row.update(success=live_success, evaluation_success=live_success)
+    if not live_success:
+        row["lint"] = command(1)
+    row["shadow_prefixes"][-1] = {
+        **shadow(not live_success),
+        "patch_index": row["shadow_prefixes"][-1]["patch_index"],
+    }
+    with pytest.raises(ValueError, match="final shadow outcome disagrees"):
         analyze_experiments(dev_v3=save(tmp_path, rows))

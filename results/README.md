@@ -22,7 +22,7 @@ Historical DEV-v1/v2 results remain separate from DEV-v3 and have no retroactive
 
 ## DEV-v3 analysis
 
-The [report](analysis/dev-v3/report.md) and [summary](analysis/dev-v3/summary.json) were regenerated from the canonical raw copy and verified byte-identical to the validated Task 35 outputs from `dev-v3-analysis-002/`.
+The [report](analysis/dev-v3/report.md) and [summary](analysis/dev-v3/summary.json) are deterministic outputs from the canonical raw copy. The final audit-follow-up added live/final-shadow consistency validation and narrowed report interpretation; the summary remains byte-identical to the validated Task 35 output from `dev-v3-analysis-002/`. Report wording changed, not results or raw evidence.
 
 Verified anchors: 110 attempts, 301 model calls, 211 tool calls, 480,707 total tokens, and $0.069782145 provider-reported cost. Primary outcomes include lint: dev-013 S2 has 5/5 functional passes but only 1/5 evaluator successes because of four lint failures.
 
