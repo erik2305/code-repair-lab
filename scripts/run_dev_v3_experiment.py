@@ -8,7 +8,6 @@ import platform
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from time import sleep
 
 from dotenv import load_dotenv
@@ -37,6 +36,7 @@ from coderepair.experiment import (
     pin_docker_image,
     require_clean_git,
 )
+from coderepair.experiment_workspace import temporary_experiment_workspace
 from coderepair.openrouter_agent_generator import OpenRouterAgentStepGenerator
 from coderepair.openrouter_generator import OpenRouterRepairGenerator
 from coderepair.repair_context import initial_context_sha256
@@ -65,7 +65,7 @@ def _pacing(value: str) -> float:
 
 def docker_execution_preflight(manifest: Path, config: RunConfig) -> None:
     """Prove the actual temporary-workspace mount and immutable image can execute."""
-    with TemporaryDirectory(prefix="coderepair-v3-") as temporary:
+    with temporary_experiment_workspace(PROJECT_ROOT / ".coderepair-tmp") as temporary:
         workspace = create_workspace(manifest, Path(temporary) / "workspace")
         try:
             result = run_in_docker(
@@ -130,7 +130,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ValueError("manifest ID does not match frozen task mapping")
     context_digests: dict[str, str] = {}
     for task, manifest in manifests.items():
-        with TemporaryDirectory(prefix="coderepair-v3-preflight-") as temporary:
+        with temporary_experiment_workspace(
+            PROJECT_ROOT / ".coderepair-tmp"
+        ) as temporary:
             workspace = create_workspace(manifest, Path(temporary) / "workspace")
             try:
                 context = workspace_context(workspace, config)
@@ -172,7 +174,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     ):
                         if completed and args.inter_attempt_delay_seconds:
                             sleep(args.inter_attempt_delay_seconds)
-                        with TemporaryDirectory(prefix="coderepair-v3-") as temporary:
+                        with temporary_experiment_workspace(
+                            PROJECT_ROOT / ".coderepair-tmp"
+                        ) as temporary:
                             workspace = create_workspace(
                                 manifest,
                                 Path(temporary) / "workspace",
@@ -237,6 +241,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                                         result,
                                         image=pinned.docker_image,
                                         timeout_seconds=pinned.evaluator_timeout_seconds,
+                                        scratch_root=PROJECT_ROOT / ".coderepair-tmp",
                                     )
                                 elif arm == ARMS[2]:
                                     shadows = shadow_evaluate_batches(
@@ -244,6 +249,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                                         scripted_shadow_batches(result),
                                         image=pinned.docker_image,
                                         timeout_seconds=pinned.evaluator_timeout_seconds,
+                                        scratch_root=PROJECT_ROOT / ".coderepair-tmp",
                                     )
                                 record = dev_v3_record(
                                     result,

@@ -148,6 +148,7 @@ def test_preflight_uses_real_mounted_workspace_pinned_image_and_cleanup(monkeypa
         assert mount.endswith("target=/workspace,readonly")
         root = Path(mount.split("source=", 1)[1].split(",target=", 1)[0])
         assert root.is_dir()
+        assert root.parent.parent == (ROOT / ".coderepair-tmp").resolve()
         assert (root / "loader.py").exists()
         run.root = root
         result.stdout = "coderepair-docker-preflight-ok\n"
@@ -157,6 +158,7 @@ def test_preflight_uses_real_mounted_workspace_pinned_image_and_cleanup(monkeypa
     runner.docker_execution_preflight(manifest(), CONFIG)
     assert len(calls) == 1
     assert not run.root.exists()
+    assert not run.root.parent.exists()
 
 
 @pytest.mark.parametrize(

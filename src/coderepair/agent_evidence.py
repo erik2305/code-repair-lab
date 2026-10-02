@@ -17,6 +17,7 @@ from coderepair.evaluator import (
     evaluate_workspace,
     workspace_state_sha256,
 )
+from coderepair.experiment_workspace import temporary_experiment_workspace
 from coderepair.file_changes import FileChange, apply_file_changes
 from coderepair.workspace import create_workspace, destroy_workspace
 
@@ -127,6 +128,7 @@ def shadow_evaluate_prefixes(
     *,
     image: str,
     timeout_seconds: float,
+    scratch_root: Path | None = None,
 ) -> tuple[ShadowPrefixResult, ...]:
     """Replay successful mutation prefixes after the live run, off-transcript."""
     batches = tuple(
@@ -136,7 +138,11 @@ def shadow_evaluate_prefixes(
         and not entry.observation.is_error
     )
     return shadow_evaluate_batches(
-        task_manifest, batches, image=image, timeout_seconds=timeout_seconds
+        task_manifest,
+        batches,
+        image=image,
+        timeout_seconds=timeout_seconds,
+        scratch_root=scratch_root,
     )
 
 
@@ -146,9 +152,15 @@ def shadow_evaluate_batches(
     *,
     image: str,
     timeout_seconds: float,
+    scratch_root: Path | None = None,
 ) -> tuple[ShadowPrefixResult, ...]:
     """Replay accepted batches cumulatively in a fresh, measurement-only copy."""
-    with TemporaryDirectory(prefix="coderepair-shadow-") as temporary:
+    directory = (
+        TemporaryDirectory(prefix="coderepair-shadow-")
+        if scratch_root is None
+        else temporary_experiment_workspace(scratch_root)
+    )
+    with directory as temporary:
         workspace = create_workspace(task_manifest, Path(temporary) / "workspace")
         try:
             measurements: list[ShadowPrefixResult] = []

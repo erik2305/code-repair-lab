@@ -160,6 +160,7 @@ def test_all_arms_offline_pin_image_share_context_and_clean_fresh_copies(
 ):
     events = preflight
     roots = []
+    shadow_roots = []
     constructor_options = []
     snapshots = {
         path: path.read_bytes()
@@ -169,6 +170,7 @@ def test_all_arms_offline_pin_image_share_context_and_clean_fresh_copies(
     original_loader = snapshots[ROOT / "benchmarks/dev/dev-013/repo/loader.py"]
     loader = original_loader.decode() + "\n# GENERATED_SOURCE_SECRET\n"
     actual_create = runner.create_workspace
+    actual_shadow_create = shadow_module.create_workspace
     actual_context = runner.workspace_context
     counts = {"repair": 0, "agent": 0, "docker": 0, "evaluation": 0}
 
@@ -185,6 +187,13 @@ def test_all_arms_offline_pin_image_share_context_and_clean_fresh_copies(
         workspace = actual_create(path, destination)
         assert (workspace.root / "loader.py").read_bytes() == original_loader
         roots.append(workspace.root)
+        assert workspace.root.parent.parent == (ROOT / ".coderepair-tmp").resolve()
+        return workspace
+
+    def shadow_create(path, destination):
+        workspace = actual_shadow_create(path, destination)
+        assert workspace.root.parent.parent == (ROOT / ".coderepair-tmp").resolve()
+        shadow_roots.append(workspace.root)
         return workspace
 
     class Repair:
@@ -247,6 +256,7 @@ def test_all_arms_offline_pin_image_share_context_and_clean_fresh_copies(
 
     monkeypatch.setattr(runner, "OpenAI", Client)
     monkeypatch.setattr(runner, "create_workspace", create)
+    monkeypatch.setattr(shadow_module, "create_workspace", shadow_create)
     monkeypatch.setattr(runner, "OpenRouterRepairGenerator", Repair)
     monkeypatch.setattr(runner, "OpenRouterAgentStepGenerator", Agent)
     monkeypatch.setattr(mcp_module, "run_in_docker", docker)
@@ -291,6 +301,9 @@ def test_all_arms_offline_pin_image_share_context_and_clean_fresh_copies(
     assert len(roots) == 5  # one preflight and four independent live attempts
     assert len(set(roots)) == len(roots)
     assert all(not root.exists() for root in roots)
+    assert len(shadow_roots) == 2  # S2 and Agent replay both use explicit scratch
+    assert len(set(roots + shadow_roots)) == 7
+    assert all(not root.parent.exists() for root in roots + shadow_roots)
     assert counts == {"repair": 4, "agent": 4, "docker": 3, "evaluation": 7}
     assert (
         constructor_options
@@ -312,6 +325,8 @@ def test_all_arms_offline_pin_image_share_context_and_clean_fresh_copies(
         "TOOL_OBSERVATION_SECRET",
         "EVALUATION_SECRET",
         "FAKE_SECRET",
+        str(ROOT),
+        ".coderepair-tmp",
     ):
         assert secret not in text
     s0 = next(row for row in records if row["arm"] == protocol.ARMS[0])

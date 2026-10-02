@@ -6,8 +6,24 @@ the later HTTP 429 also aborted the run. Do not resume, rewrite, merge or analyz
 these rows as repair failures. Start the clean comparison from the beginning in
 a new exclusive output file.
 
-The runner now pins the Docker image and executes a harmless Python sentinel in
-a fresh disposable workspace using the same temporary-directory mechanism,
+The aborted comparison's Docker exit 125 was reproduced as a Windows bind-mount
+access failure (`CreateFile <workspace>: Access is denied`) for a workspace
+created through the default system temporary-directory path. Independent
+diagnostics also found protected owner-specific ACLs with disabled inheritance
+under changing Windows execution identities (`ysati` and `CodexSandboxOffline`).
+This establishes an access problem, not that `%TEMP%` alone explains its cause.
+
+DEV-v3 uses a project-local temporary workspace root, `.coderepair-tmp/`, for
+context validation, mounted preflight, every live attempt, and S2/Agent shadows.
+A shared helper creates unique UUID children using ordinary `mkdir()` so they
+inherit normal project permissions rather than tempfile's private `0o700` ACLs.
+It removes each child on exit (including failures); the Git-ignored parent may
+persist. No ACL changes or Administrator privileges are part of the runner.
+Historical shadow callers without this explicit scratch root retain their prior
+temporary-directory behavior. Scratch paths are not persisted in JSONL.
+
+The runner pins the Docker image and executes a harmless Python sentinel in
+a fresh disposable workspace using that same scratch mechanism,
 read-only bind mount and restricted Docker runner as real attempts. This must
 pass before provider construction. Exit 125 raises an operational exception with
 bounded, redacted operator diagnostics; it is not model feedback or normal JSONL.
