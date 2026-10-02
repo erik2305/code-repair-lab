@@ -129,17 +129,31 @@ def shadow_evaluate_prefixes(
     timeout_seconds: float,
 ) -> tuple[ShadowPrefixResult, ...]:
     """Replay successful mutation prefixes after the live run, off-transcript."""
+    batches = tuple(
+        entry.action.changes
+        for entry in result.transcript
+        if isinstance(entry.action, ApplyFileChangesAction)
+        and not entry.observation.is_error
+    )
+    return shadow_evaluate_batches(
+        task_manifest, batches, image=image, timeout_seconds=timeout_seconds
+    )
+
+
+def shadow_evaluate_batches(
+    task_manifest: Path,
+    batches: tuple[tuple[FileChange, ...], ...],
+    *,
+    image: str,
+    timeout_seconds: float,
+) -> tuple[ShadowPrefixResult, ...]:
+    """Replay accepted batches cumulatively in a fresh, measurement-only copy."""
     with TemporaryDirectory(prefix="coderepair-shadow-") as temporary:
         workspace = create_workspace(task_manifest, Path(temporary) / "workspace")
         try:
             measurements: list[ShadowPrefixResult] = []
-            for entry in result.transcript:
-                if (
-                    not isinstance(entry.action, ApplyFileChangesAction)
-                    or entry.observation.is_error
-                ):
-                    continue
-                apply_file_changes(workspace, entry.action.changes)
+            for changes in batches:
+                apply_file_changes(workspace, changes)
                 state_digest = workspace_state_sha256(workspace.root)
                 evaluation = evaluate_workspace(
                     task_manifest,
