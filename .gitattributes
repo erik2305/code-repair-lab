@@ -1,0 +1,4 @@
+# Frozen research evidence and deterministic outputs must retain exact bytes.
+results/raw/*.jsonl -text
+results/analysis/dev-v3/report.md -text
+results/analysis/dev-v3/summary.json -text

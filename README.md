@@ -1,111 +1,133 @@
 # CodeRepair Lab
 
-CodeRepair Lab is an experimental Python project comparing **single-shot LLM code repair** with **iterative agentic repair**. The research question is: does iteration materially improve repair success, and when is that improvement worth the additional model calls, tokens, cost, latency, and complexity? Intended comparisons include solve rate, first-pass success, token usage, estimated/API cost, latency, model calls, iterations, and failure modes. The project is under development; both strategy primitives exist, and paired development experiments are underway.
+CodeRepair Lab is a controlled research framework comparing single-shot LLM code repair with feedback-driven, agentic repair on reproducible Python tasks. It measures repair success alongside tokens, provider-reported cost, model calls, and latency. This is a completed synthetic mechanism-study pet project, not a production autonomous coding agent or a real-world bug benchmark.
 
-## Current architecture
+## Research question
 
-```text
-TaskSpec / YAML
-      ↓
-Disposable snapshot workspace
-      ↓
-Shared InitialRepairContext
-      ↓
-Repair strategy: single-shot baseline or bounded agent loop
-      ↓
-Controlled mutation / workspace-scoped MCP tools
-      ↓
-Independent evaluator → read-only Docker checks
-```
+Does an iterative agentic repair loop materially outperform a single-shot LLM repair baseline, and if so, under what information conditions and at what additional cost?
 
-Implemented today:
+## Key findings
 
-- Strict YAML loading into `TaskSpec`, with `SnapshotSource` and `GitSource` schemas. Snapshot tasks can be copied into disposable workspaces; Git materialization is not implemented.
-- Logical writable/protected path policy and controlled `FileChange` mutation. The filesystem boundary rejects symlinks, junctions, hard links, and case aliases that could bypass policy.
-- Docker execution with network disabled, capabilities dropped, resource limits, and read-only workspace mounts for trusted checks. The independent evaluator checks protected files and the complete final-tree delta against `writable_paths` before running reproduction, full tests, and optional lint.
-- A workspace-scoped MCP server exposing exactly `read_file`, `apply_file_changes`, `run_reproduction`, `run_full_tests`, and `run_lint`. It exposes no arbitrary model-facing shell command.
-- Deterministic `InitialRepairContext`; provider-neutral generation usage, latency, and model identity; `RunConfig` and agent-only `AgentLimits` contracts; and a single-shot baseline that makes one generator call before independent evaluation.
-- OpenRouter Responses adapters for repair proposals and typed agent actions. OpenRouter is the only supported model gateway for benchmark execution. The project uses the `openai` Python SDK as an OpenAI-compatible client configured for OpenRouter; benchmark requests are not sent directly to OpenAI. A bounded cumulative plain-Python agent loop uses the existing MCP tools, explicit model/tool/transcript limits, and one independent final evaluation. Both strategy paths have been live-validated once on `dev-001`.
+In these synthetic controlled tasks:
 
-The benchmark routing policy fixes one logical model and its reasoning/generation settings. Cross-model fallback is disabled; same-model provider failover is allowed with `require_parameters` enabled. Results retain the returned model, selected routed provider when metadata is available, and gateway-reported cost when available.
+- When the first patch was sufficient, Agent interaction added overhead without improving success.
+- Withholding essential information made the initial single-shot fail; providing or acquiring that evidence improved success.
+- Progressive bugs exposed a second invariant only after the first repair. Post-attempt execution feedback enabled successful second repairs.
+- Adaptive Agent behavior was not shown to be necessary for those progressive tasks: the fixed two-shot S2 protocol also solved them.
+- Agent interaction used substantially more tokens, model calls, and provider-reported cost. These observations do not establish universal agent superiority or inferiority.
 
-Both strategy paths now expose comparable raw telemetry: evaluator success, model/tool calls, available token counts, aggregate model-request latency, end-to-end strategy duration, and provider-reported USD cost when supplied. Cost estimation, aggregate solve rates, comparative first-pass metrics, iteration counts, and automated failure analysis are not implemented.
+## Experimental design
 
-## Development benchmark and live validation
+Strategies start with the same deterministic `InitialRepairContext`, including the task description, policy, file inventory, and bounded whole UTF-8 files. Frozen ablations deliberately vary subsequent information access:
 
-The development set contains four small fixtures:
-
-| Task | Bug class | Main purpose |
-| --- | --- | --- |
-| `dev-001` | Whitespace normalization | Local text repair |
-| `dev-002` | Collection boundary | Incomplete final chunk |
-| `dev-003` | Cross-module contract | Canonical identifier lookup |
-| `dev-004` | Shared mutable state | Cross-call options contamination |
-
-These are development/evaluation fixtures for debugging the experiment, **not** a holdout benchmark or evidence of comparative performance.
-
-The preregistered DEV-v2 group adds six synthetic development fixtures:
-
-| Task | Fixed bug class |
+| Arm | Information and repair protocol |
 | --- | --- |
-| `dev-005` | Cache invalidation / stale state |
-| `dev-006` | Exception-boundary specificity |
-| `dev-007` | Serialization compatibility |
-| `dev-008` | Transactional multi-state invariant |
-| `dev-009` | Recursive base-context propagation |
-| `dev-010` | Parsing/escaping pipeline |
+| S0 | Initial single-shot: one generation, no additional inspection or feedback. |
+| S1 | Evidence-enriched single-shot: one generation after a fixed evidence acquisition. Applicable to dev-011–014 only. |
+| S2 | Fixed scripted two-shot feedback: first repair, fixed probe, second repair; no adaptive tool selection. |
+| Agent | Bounded adaptive loop with workspace-scoped MCP tools. |
 
-[DEV_V2_DESIGN.md](benchmarks/dev/DEV_V2_DESIGN.md) records the fixed classes and acceptance criteria before any model execution on these fixtures. For each, trusted validation establishes a partial repair that passes reproduction but fails an independent full-suite regression, as well as a complete repair that passes independent evaluation. These are still development fixtures, not holdout tasks or model-performance results. The live experiment runner remains scoped to `dev-001` through `dev-004` pending fixture review.
+DEV-v3 uses six tasks and five repetitions per applicable task/arm: 110 attempts. Common controls include logical model `openai/gpt-6-luna`, reasoning effort `medium`, 4,096 output tokens per call, 60-second request timeout, 30-second evaluator-command timeout, and 100,000/200,000-byte initial-context limits. Agent limits are eight model calls, seven tool calls, and 200,000 transcript bytes. Inter-attempt pacing is 20 seconds, outside measured strategy duration.
 
-One OpenRouter single-shot baseline smoke run on `dev-001` used `openai/gpt-6-luna` with `medium` reasoning. The response reported the same returned model, routed provider OpenAI, 356 input / 92 output / 448 total tokens, $0.0000816 cost, and about 3.25 seconds of request latency. It proposed one `text_utils.py` change; mutation was accepted, and independent reproduction, full-suite, and lint checks all exited 0. This is **one infrastructure-validation run**, not evidence about model quality, solve rate, strategy superiority, expected latency, or average cost. Same-model provider failover was allowed by policy but was not demonstrated by this call.
+The frozen [design](benchmarks/dev/DEV_V3_DESIGN.md), [execution protocol](benchmarks/dev/DEV_V3_EXECUTION.md), and [operational safeguards](benchmarks/dev/DEV_V3_OPERATIONS.md) define the comparison. Shadow evaluations replay accepted mutation prefixes in fresh workspaces after the measured run, without feeding their outcomes back to the strategy.
 
-One OpenRouter iterative-agent smoke run on `dev-001` also passed independent evaluation. It made three model calls and two MCP tool calls, proposing `apply_file_changes` for `text_utils.py`, then `run_reproduction`, then `finish`. It reported 3,058 input / 311 output / 3,369 total tokens, $0.00049165 cost, about 16.85 seconds of aggregate model latency, and about 24.69 seconds end-to-end. Final reproduction, full-suite, and lint checks exited 0. This is likewise **one infrastructure-validation run**, not comparative performance evidence.
+## DEV-v3 results
 
-A historical direct-Gemini manual smoke run also validated the provider-neutral baseline path. Its script is retained only as historical infrastructure-validation context; direct Gemini is not a supported benchmark transport.
+Primary success comes from the independent evaluator: authorized final repository delta, unchanged protected state, and passing reproduction, full tests, and configured lint without timeout.
 
-## Safety boundary
+| Task | S0 | S1 | S2 | Agent |
+| --- | --- | --- | --- | --- |
+| dev-011 | 0/5 | 5/5 | 5/5 | 5/5 |
+| dev-012 | 5/5 | 5/5 | 5/5 | 5/5 |
+| dev-013 | 0/5 | 5/5 | 1/5 | 5/5 |
+| dev-014 | 5/5 | 5/5 | 5/5 | 5/5 |
+| dev-015 | 0/5 | — | 5/5 | 5/5 |
+| dev-016 | 0/5 | — | 5/5 | 5/5 |
 
-Benchmark sources remain separate from disposable workspaces. Model-originated file changes pass through controlled host-side mutation, and trusted benchmark commands run with a read-only workspace in Docker. The evaluator independently rejects protected-file tampering and unauthorized final repository changes before executing candidate code. Docker here is a restricted development execution environment, **not** a formally hardened hostile multi-tenant sandbox or VM.
+S2 passed dev-013's functional reproduction/full tests **5/5**, but four runs failed lint and remain primary evaluator failures. Agent occurrences were 20 tool-assisted one-patch repairs and 10 feedback-responsive iterations; there were no context-refinement iterations or unclassified occurrences.
 
-## Development setup
+## Cost / overhead
 
-Python 3.12 or newer is required. Create and activate a virtual environment, then install the package and development tools:
+| Arm | Mean tokens | Mean cost | Mean duration | Mean model calls |
+| --- | ---: | ---: | ---: | ---: |
+| S0 | 989.03 | $0.00023118 | 6.83 s | 1.00 |
+| S1 | 1465.25 | $0.00028859 | 7.35 s | 1.00 |
+| S2 | 2552.30 | $0.00052768 | 12.08 s | 2.00 |
+| Agent | 11505.40 | $0.00137482 | 19.38 s | 6.37 |
 
-```bash
+Aggregate means span different applicability sets; use the [deterministic full report](results/analysis/dev-v3/report.md) for per-task matched comparisons rather than pooling solve rates. Strategy duration excludes inter-attempt pacing and later shadow replay. The complete DEV-v3 comparison recorded 301 model calls, 211 tool calls, 480,707 tokens, and $0.069782145 provider-reported cost; this is not a total infrastructure-cost estimate.
+
+## Architecture and isolation
+
+Strict YAML task manifests define immutable snapshots, trusted argv checks, and writable/protected policies. Disposable copies feed the shared initial context, single-shot baseline, or bounded plain-Python agent loop. MCP exposes exactly `read_file`, `apply_file_changes`, `run_reproduction`, `run_full_tests`, and `run_lint`; the model cannot supply arbitrary shell commands, Docker options, images, or timeouts. LangGraph is not used.
+
+Controlled host-side mutation validates the entire change batch before writing, applies protected-path precedence, and rejects filesystem aliases including symlinks, junctions, hard links, and case mismatches. The independent evaluator compares the complete final tree with the snapshot and rejects unauthorized or unsafe changes before executing any candidate code.
+
+Evaluator and MCP feedback commands mount `/workspace` read-only; `/tmp` remains writable. Docker disables runtime networking, drops all capabilities, enables no-new-privileges, and limits CPU (1), RAM (512 MiB), and PIDs (128), with a read-only container root. Only the workspace is bind-mounted, not the Docker socket, project root, or home directory. This is a restricted development sandbox, not a formally hardened hostile multi-tenant boundary.
+
+OpenRouter transport uses strict structured proposals, explicit reasoning effort, and disabled SDK retries. Cross-model fallback is disabled; same-model provider failover is allowed with required parameter support. Source-free raw JSONL records telemetry and provenance; offline deterministic analysis is separate from strategy execution and final/shadow evaluation.
+
+## DEV-v1 → DEV-v3 progression
+
+- **DEV-v1:** infrastructure and four basic paired tasks; baseline and Agent both solved 4/4.
+- **DEV-v2:** six richer tasks; both solved 6/6, with Agent still making one accepted patch per task. Interaction overhead alone did not demonstrate iterative value.
+- **DEV-v3:** frozen S0/S1/S2/Agent ablations, withheld information, runtime diagnostics, progressive F1 → F2 bugs, and shadow prefix evaluation distinguish tool-assisted one-patch repair from feedback-responsive iteration.
+
+Historical DEV-v1/v2 records do not contain the later shadow measurements. Versions are not pooled into one solve-rate claim.
+
+## Reproducibility
+
+[Canonical evidence](results/README.md) includes frozen raw JSONLs, SHA-256 hashes, the DEV-v3 report, and machine-readable summary. The same DEV-v3 input regenerates byte-identical report/summary. Raw records do not persist full prompts, generated source contents, or tool-observation contents. They record Git commit provenance, immutable Docker image ID, dependency/environment metadata, and requested/returned model information.
+
+Use Python 3.12+ (the recorded DEV-v3 environment used Python 3.13) and install development tooling:
+
+```powershell
 python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
 ```
 
-Build the development sandbox image before Docker-backed checks:
+On POSIX systems activate with `source .venv/bin/activate`. Docker-backed checks require a running Docker daemon/Desktop and the development image:
 
-```bash
+```text
 docker build -f Dockerfile.sandbox -t coderepair-lab-sandbox:dev .
 ```
 
-The image contains Python 3.13, pytest, and Ruff and is intended for the synthetic development task. Run local checks with:
+The image contains Python 3.13, pytest, and Ruff for synthetic dev tasks, not arbitrary external repository dependencies. Rebuilding its mutable tag need not reproduce the original image ID; the recorded ID identifies what actually ran.
 
-```bash
-python -m pytest
+## Running tests and analysis
+
+Automated tests use fake providers and make no external LLM requests. Docker integration tests skip when the daemon or image is unavailable. On Windows use a fresh repository-local basetemp per verification run:
+
+```text
+python -m pytest --basetemp=.pytest-tmp-release
 ruff check .
 git diff --check
 ```
 
-The scripts under `scripts/` are **manual** and may consume provider quota or balance. They are not run by pytest. `live_openrouter_dev001.py` and `live_openrouter_agent_dev001.py` are the single-task smoke paths; `live_gemini_smoke.py` is historical only. Supply credentials through environment variables; never commit API keys.
+Offline analysis needs no API credentials or Docker:
 
-## Paired DEV experiment runner
-
-After building the sandbox image, commit or stash all tracked and untracked changes, set `OPENROUTER_API_KEY`, and invoke the manual runner with an explicit model and a new output filename:
-
-```bash
-python scripts/run_dev_experiment.py --model openai/gpt-6-luna --reasoning-effort medium --repetitions 1 --output dev-results.jsonl
+```text
+python scripts/analyze_experiments.py --dev-v3 results/raw/dev-v3.jsonl --output-dir analysis-output
 ```
 
-The runner pairs baseline and agent attempts on `dev-001` through `dev-004`. Each attempt gets a fresh disposable workspace and the same model, reasoning level, initial-context budgets, evaluator, and Docker image. Strategy order alternates deterministically by task and repetition. It refuses a dirty Git worktree or an existing output file, records the Git commit and immutable Docker image ID, and flushes one raw JSONL record per completed attempt. Repetitions are independent; an operational failure leaves completed records in place without a retry. **Running the script consumes provider balance.** These four tasks remain development fixtures, not a holdout evaluation; no comparative result is claimed here.
+The output directory must not already exist. Add `--dev-v1 results/raw/dev-v1.jsonl --dev-v2 results/raw/dev-v2.jsonl` for a combined, separately reported historical analysis. Outputs include `report.md`, `summary.json`, and reproducible `attempts.csv`; only report/summary are published here. Live smoke/experiment scripts are manual, credential-requiring tools, not part of offline reproduction.
 
-## Local verification
+## Repository structure
 
-Docker-backed tests run when the daemon and sandbox image are available; otherwise they skip. Local results are point-in-time checks, not a CI guarantee.
+```text
+benchmarks/dev/      frozen designs, protocols, and synthetic tasks
+src/coderepair/      repair, execution, evaluation, and analysis code
+scripts/            manual experiment and offline analysis entry points
+tests/              automated verification
+results/raw/        canonical frozen research evidence
+results/analysis/   deterministic derived reports
+```
 
-## Planned, not implemented
+## Limitations
 
-LangGraph, human approval (HITL), holdout benchmarks, aggregate cost analysis, automated failure taxonomy, full environment provenance, `GitSource` materialization, and tracing remain future work. There is no CI guarantee in this repository.
+This is a synthetic pilot: six DEV-v3 tasks, five repetitions per applicable task/arm, and one logical model. There is no external real-world bug benchmark or claim of statistical significance. Informative filenames can leak clues. Same-model provider infrastructure is not physically controlled, and provider-reported costs/latency are environment-dependent. The findings do not prove universal agent superiority or inferiority.
+
+## Status
+
+CodeRepair Lab is complete for its intended pet-project scope. The repository preserves frozen experimental evidence and deterministic analysis needed to reproduce the reported findings; further benchmark expansion and agent-framework work are out of scope.

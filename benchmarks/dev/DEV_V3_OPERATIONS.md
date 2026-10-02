@@ -10,7 +10,7 @@ The aborted comparison's Docker exit 125 was reproduced as a Windows bind-mount
 access failure (`CreateFile <workspace>: Access is denied`) for a workspace
 created through the default system temporary-directory path. Independent
 diagnostics also found protected owner-specific ACLs with disabled inheritance
-under changing Windows execution identities (`ysati` and `CodexSandboxOffline`).
+under changing Windows execution identities (`interactive user account` and `Codex sandbox account`).
 This establishes an access problem, not that `%TEMP%` alone explains its cause.
 
 DEV-v3 uses a project-local temporary workspace root, `.coderepair-tmp/`, for

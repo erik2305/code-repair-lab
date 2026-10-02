@@ -25,6 +25,7 @@ dist/
 .pytest-tmp/
 .pytest-tmp-*/
 .coderepair-tmp/
+.local-artifacts/
 .ruff_cache/
 .coverage
 coverage.xml
