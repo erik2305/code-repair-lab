@@ -2,12 +2,14 @@
 
 import argparse
 import json
+import math
 import os
 import platform
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from time import sleep
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -28,6 +30,7 @@ from coderepair.dev_v3_experiment import (
     validate_selection,
     workspace_context,
 )
+from coderepair.docker_runner import DockerInfrastructureError, run_in_docker
 from coderepair.experiment import (
     ExperimentProvenance,
     open_new_output,
@@ -53,6 +56,44 @@ def _selectors(value: str | None, defaults: tuple[str, ...]) -> tuple[str, ...]:
     return defaults if value is None else tuple(value.split(","))
 
 
+def _pacing(value: str) -> float:
+    delay = float(value)
+    if not math.isfinite(delay) or delay < 0:
+        raise argparse.ArgumentTypeError("delay must be a non-negative finite number")
+    return delay
+
+
+def docker_execution_preflight(manifest: Path, config: RunConfig) -> None:
+    """Prove the actual temporary-workspace mount and immutable image can execute."""
+    with TemporaryDirectory(prefix="coderepair-v3-") as temporary:
+        workspace = create_workspace(manifest, Path(temporary) / "workspace")
+        try:
+            result = run_in_docker(
+                workspace,
+                (
+                    "python",
+                    "-c",
+                    "from pathlib import Path; "
+                    "assert Path('/workspace').is_dir(); "
+                    "assert any(Path('/workspace').iterdir()); "
+                    "print('coderepair-docker-preflight-ok')",
+                ),
+                image=config.docker_image,
+                timeout_seconds=config.evaluator_timeout_seconds,
+                workspace_read_only=True,
+            )
+            if (
+                result.exit_code != 0
+                or result.timed_out
+                or result.stdout.strip() != "coderepair-docker-preflight-ok"
+            ):
+                raise DockerInfrastructureError(
+                    "Docker execution preflight did not pass"
+                )
+        finally:
+            destroy_workspace(workspace)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the frozen DEV-v3 protocol")
     parser.add_argument("--purpose", choices=("smoke", "comparison"), required=True)
@@ -62,6 +103,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--tasks", help="comma-separated task IDs (default: all six)")
     parser.add_argument("--arms", help="comma-separated arms (default: all applicable)")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--inter-attempt-delay-seconds", type=_pacing, default=0.0)
     args = parser.parse_args(argv)
     tasks = _selectors(args.tasks, tuple(TASK_PROTOCOLS))
     arms = _selectors(args.arms, ())
@@ -97,6 +139,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             finally:
                 destroy_workspace(workspace)
     pinned, image_id, digests = pin_docker_image(config)
+    docker_execution_preflight(next(iter(manifests.values())), pinned)
     provenance = ExperimentProvenance(
         experiment_id=datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ"),
         git_commit=commit,
@@ -120,12 +163,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 max_output_tokens=pinned.max_output_tokens,
                 request_timeout_seconds=pinned.request_timeout_seconds,
             )
+            completed = 0
             for task in tasks:
                 manifest = manifests[task]
                 for repetition in range(1, args.repetitions + 1):
                     for position, arm in enumerate(
                         arm_order(task, repetition, arms), 1
                     ):
+                        if completed and args.inter_attempt_delay_seconds:
+                            sleep(args.inter_attempt_delay_seconds)
                         with TemporaryDirectory(prefix="coderepair-v3-") as temporary:
                             workspace = create_workspace(
                                 manifest,
@@ -212,6 +258,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                                     finished_utc=finished,
                                     lint_configured=workspace.task.lint is not None,
                                     shadow_prefixes=shadows,
+                                    inter_attempt_delay_seconds=(
+                                        args.inter_attempt_delay_seconds
+                                    ),
                                 )
                                 output.write(
                                     json.dumps(
@@ -223,6 +272,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                                     + "\n"
                                 )
                                 output.flush()
+                                completed += 1
                                 print(
                                     f"[{task} rep={repetition} {arm}] "
                                     f"success={result.success}"

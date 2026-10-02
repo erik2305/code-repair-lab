@@ -67,6 +67,7 @@ def preflight(monkeypatch):
 
     monkeypatch.setattr(runner, "require_clean_git", git)
     monkeypatch.setattr(runner, "pin_docker_image", pin)
+    monkeypatch.setattr(runner, "docker_execution_preflight", lambda *args: None)
     monkeypatch.setattr(runner, "OpenAI", unexpected_client)
     return events
 
@@ -252,9 +253,39 @@ def test_all_arms_offline_pin_image_share_context_and_clean_fresh_copies(
     for module in (protocol, baseline_module, agent_module, shadow_module):
         monkeypatch.setattr(module, "evaluate_workspace", evaluate)
     output = tmp_path / "all.jsonl"
-    assert runner.main(arguments(output)) == 0
+    timing_events = []
+
+    def timestamp():
+        timing_events.append("timestamp")
+        return f"t{len(timing_events)}"
+
+    def delay(seconds):
+        rows = output.read_text("utf-8").splitlines()
+        assert len(rows) == timing_events.count("delay") + 1
+        assert seconds == 20
+        timing_events.append("delay")
+
+    monkeypatch.setattr(runner, "_utc_now", timestamp)
+    monkeypatch.setattr(runner, "sleep", delay)
+    assert runner.main(arguments(output) + ["--inter-attempt-delay-seconds", "20"]) == 0
+    assert timing_events == [
+        "timestamp",
+        "timestamp",
+        "delay",
+        "timestamp",
+        "timestamp",
+        "delay",
+        "timestamp",
+        "timestamp",
+        "delay",
+        "timestamp",
+        "timestamp",
+    ]
     records = [json.loads(line) for line in output.read_text("utf-8").splitlines()]
     assert len(records) == 4
+    assert [row["arm"] for row in records] == list(protocol.arm_order("dev-013", 1))
+    assert all(row["inter_attempt_delay_seconds"] == 20 for row in records)
+    assert all(row["strategy_duration_seconds"] < 20 for row in records)
     assert {row["arm"] for row in records} == set(protocol.ARMS)
     assert len({row["initial_context_sha256"] for row in records}) == 1
     assert len(roots) == 5  # one preflight and four independent live attempts

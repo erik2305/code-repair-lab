@@ -29,7 +29,7 @@ from coderepair.experiment import (
 )
 from coderepair.file_changes import FileChange, apply_file_changes
 from coderepair.generation import GenerationResult
-from coderepair.mcp_server import build_mcp_server
+from coderepair.mcp_server import build_mcp_server, raise_docker_tool_failure
 from coderepair.openrouter_response import openrouter_routing_policy
 from coderepair.repair_context import (
     InitialRepairContext,
@@ -221,6 +221,10 @@ def acquire_fixed_evidence(
 
     result = asyncio.run(acquire())
     if result.is_error:
+        error_text = "\n".join(
+            block.text for block in result.content if block.type == "text"
+        )
+        raise_docker_tool_failure(probe.tool, True, error_text)
         raise RuntimeError("fixed MCP evidence acquisition failed")
     structured = result.structured_content
     content = (
@@ -409,6 +413,7 @@ def dev_v3_record(
     finished_utc: str,
     lint_configured: bool,
     shadow_prefixes: tuple[ShadowPrefixResult, ...] = (),
+    inter_attempt_delay_seconds: float = 0,
 ) -> dict[str, object]:
     """Prospective schema v3; never persist source, prompts, or observation text."""
     protocol = TASK_PROTOCOLS[task_id]
@@ -539,6 +544,7 @@ def dev_v3_record(
         ),
         agent_limits=asdict(AGENT_LIMITS) if arm == ARMS[3] else None,
         shadow_prefixes=[asdict(prefix) for prefix in shadow_prefixes],
+        inter_attempt_delay_seconds=inter_attempt_delay_seconds,
     )
     if "termination_reason" not in record:
         record["termination_reason"] = (

@@ -20,11 +20,12 @@ from coderepair.agent_protocol import (
     ReadFileAction,
     tool_name_for_action,
 )
+from coderepair.docker_runner import DockerInfrastructureError
 from coderepair.evaluator import (
     EvaluationResult,
     evaluate_workspace,
 )
-from coderepair.mcp_server import build_mcp_server
+from coderepair.mcp_server import build_mcp_server, raise_docker_tool_failure
 from coderepair.repair_context import build_initial_context, initial_context_sha256
 from coderepair.run_config import AgentLimits, RunConfig
 from coderepair.tasks import load_task
@@ -139,6 +140,11 @@ def run_agentic_repair(
                     content = "\n".join(
                         block.text for block in result.content if block.type == "text"
                     )
+                try:
+                    raise_docker_tool_failure(name, result.is_error, content)
+                except DockerInfrastructureError as error:
+                    generator_error = error
+                    break
                 transcript.append(
                     AgentTranscriptEntry(
                         action,

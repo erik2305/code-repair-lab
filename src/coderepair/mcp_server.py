@@ -7,7 +7,12 @@ from pathlib import Path, PurePosixPath
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
-from coderepair.docker_runner import CommandResult, run_in_docker
+from coderepair.docker_runner import (
+    DOCKER_INFRASTRUCTURE_PREFIX,
+    CommandResult,
+    DockerInfrastructureError,
+    run_in_docker,
+)
 from coderepair.file_changes import FileChange
 from coderepair.file_changes import apply_file_changes as _apply_changes
 from coderepair.path_policy import validate_workspace_path
@@ -66,6 +71,8 @@ def build_mcp_server(
                 timeout_seconds=timeout_seconds,
                 workspace_read_only=True,
             )
+        except DockerInfrastructureError as error:
+            raise ToolError(str(error)) from None
         except (OSError, ValueError, subprocess.SubprocessError) as error:
             raise ToolError(_safe_execution_error(error)) from None
         return _execution_feedback(result, workspace.root)
@@ -88,6 +95,17 @@ def build_mcp_server(
         return execute(workspace.task.lint)
 
     return server
+
+
+def raise_docker_tool_failure(tool: str, is_error: bool, content: str) -> None:
+    """Trusted callers abort on the operational marker before model feedback."""
+    if (
+        tool in ("run_reproduction", "run_full_tests", "run_lint")
+        and is_error
+        and DOCKER_INFRASTRUCTURE_PREFIX in content
+    ):
+        diagnostic = content[content.index(DOCKER_INFRASTRUCTURE_PREFIX) :]
+        raise DockerInfrastructureError(diagnostic)
 
 
 def _execution_feedback(result: CommandResult, root: Path) -> ExecutionToolResult:

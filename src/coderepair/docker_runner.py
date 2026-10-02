@@ -1,6 +1,8 @@
 """Run trusted argv commands in a constrained Docker container."""
 
 import math
+import os
+import re
 import subprocess
 import uuid
 from collections.abc import Sequence
@@ -8,6 +10,43 @@ from dataclasses import dataclass
 from time import monotonic
 
 from coderepair.workspace import Workspace
+
+DOCKER_INFRASTRUCTURE_PREFIX = "Docker infrastructure failure (exit 125): "
+
+
+class DockerInfrastructureError(RuntimeError):
+    """Docker could not launch the container; this is not candidate feedback."""
+
+
+def _docker_diagnostic(stderr: str, workspace: Workspace) -> str:
+    """Bound operator diagnostics and redact host locations/credential values."""
+    message = stderr
+    for name, value in os.environ.items():
+        if len(value) >= 8 and any(
+            word in name.upper() for word in ("KEY", "TOKEN", "SECRET", "PASSWORD")
+        ):
+            message = message.replace(value, "<redacted>")
+    for path in (workspace.root, workspace.root.parent):
+        message = message.replace(str(path), "<workspace>")
+        message = message.replace(path.as_posix(), "<workspace>")
+    message = re.sub(
+        r"(?i)(bearer\s+|authorization:\s*basic\s+|"
+        r"(?:api[_-]?key|token|password|secret)\s*[=:]\s*)"
+        r"[^\s,;]+",
+        r"\1<redacted>",
+        message,
+    )
+    message = re.sub(r"([a-zA-Z]+://)[^/\s:@]+:[^@\s/]+@", r"\1<redacted>@", message)
+    message = re.sub(
+        r"(['\"])(?:[A-Za-z]:[\\/]|/)[^'\"\r\n]*\1", "<host path>", message
+    )
+    message = re.sub(
+        r"[A-Za-z]:[\\/][^\s'\",;]+|(?<![\w:])/[^\s'\",;]+", "<host path>", message
+    )
+    encoded = message.strip().encode("utf-8")
+    if len(encoded) > 2048:
+        message = encoded[:2020].decode("utf-8", errors="ignore") + " ... [truncated]"
+    return message.strip() or "Docker returned no diagnostic"
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +135,11 @@ def run_in_docker(
             duration_seconds=monotonic() - started_at,
         )
 
+    if completed.returncode == 125:
+        raise DockerInfrastructureError(
+            DOCKER_INFRASTRUCTURE_PREFIX
+            + _docker_diagnostic(completed.stderr, workspace)
+        )
     return CommandResult(
         argv=command_argv,
         exit_code=completed.returncode,
